@@ -1,0 +1,23 @@
+import Foundation
+import IRdpConfiguration
+import RdpServer
+import Testing
+@testable import IRdpServiceCore
+
+struct ServiceStatusReporterTests {
+    @Test func publishesSessionsToStatusFile() throws {
+        let paths = ApplicationPaths(baseDirectory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true))
+        defer { try? FileManager.default.removeItem(at: paths.baseDirectory) }
+        let store = StatusStore(paths: paths)
+        let reporter = ServiceStatusReporter(store: store)
+        let info = RdpSessionInfo(id: UUID(), remoteAddress: "192.168.1.5", clientName: "LAPTOP", userName: "kamil", desktopSize: DesktopSize(width: 1920, height: 1080), bitsPerPixel: 32, startedAt: Date())
+        reporter.update { $0.state = .listening }
+        reporter.sessionDidStart(info)
+        #expect(store.load()?.sessions.map(\.clientName) == ["LAPTOP"])
+        #expect(store.load()?.state == .listening)
+        reporter.sessionDidEnd(info.id)
+        #expect(store.load()?.sessions.isEmpty == true)
+        reporter.connectionDidFail(remoteAddress: "10.0.0.1", reason: "authentication failed")
+        #expect(store.load()?.lastError == "10.0.0.1: authentication failed")
+    }
+}
