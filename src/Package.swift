@@ -9,6 +9,9 @@ let package = Package(
         .executable(name: "iRdpService", targets: ["iRdpService"]),
         .library(name: "RdpProtocol", targets: ["RdpProtocol"]),
         .library(name: "RdpServer", targets: ["RdpServer"]),
+        .library(name: "IRdpConfiguration", targets: ["IRdpConfiguration"]),
+        .library(name: "MacIntegration", targets: ["MacIntegration"]),
+        .library(name: "IRdpServiceCore", targets: ["IRdpServiceCore"]),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.65.0"),

@@ -56,6 +56,18 @@ All code is in `src` (a Swift package):
 
 Each type is in its own file. Tests are in `src/Tests`.
 
+## Open in Xcode
+
+```bash
+open src/iRdp.xcodeproj
+```
+
+The `iRdp` scheme builds the menu bar app with iRdpService and the LaunchAgent
+embedded in the bundle, so Run starts the real app. The project is generated
+from `src/project.yml` with XcodeGen (`cd src && xcodegen generate`) and uses
+the Swift package for all modules. To run the unit tests in Xcode, open
+`src/Package.swift` instead and use Product → Test.
+
 ## Build and test
 
 ```bash
