@@ -8,6 +8,13 @@ struct MenuBarContentView: View {
 
     var body: some View {
         Text(model.statusSummary)
+        if !model.permissions.isComplete {
+            Button("⚠︎ Permissions Missing…") {
+                model.selectedSettingsTab = .permissions
+                openWindow(id: SettingsView.windowID)
+                NSApp.activate()
+            }
+        }
         if model.isServiceRunning, model.settings.listenAddress != "127.0.0.1", let address = model.connectionAddresses.first {
             Text("Connect to \(address)")
         }

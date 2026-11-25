@@ -10,7 +10,7 @@ struct IRdpApp: App {
         MenuBarExtra {
             MenuBarContentView(model: model)
         } label: {
-            Image(systemName: model.menuBarSymbolName)
+            MenuBarLabel(model: model)
         }
         Window("iRdp Settings", id: SettingsView.windowID) {
             SettingsView(model: model)

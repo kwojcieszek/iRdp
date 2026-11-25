@@ -24,8 +24,8 @@ public actor ServiceRuntime {
     /// Runs until `stop()` is called.
     public func run(pollInterval: Duration = .seconds(2)) async {
         Self.logger.info("iRdpService starting")
-        await PermissionChecker.triggerScreenRecordingPrompt()
-        if !PermissionChecker.isAccessibilityGranted { PermissionChecker.requestAccessibility() }
+        // The service never shows permission prompts itself: the menu bar app checks and requests them,
+        // and macOS attributes the service's access to the app (same bundle).
         while !isStopping {
             await applySettingsIfNeeded()
             reporter.update { _ in }

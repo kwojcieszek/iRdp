@@ -109,13 +109,18 @@ updates, input, a wrong password, a client without TLS and a session takeover.
 
 1. Open `/Applications/iRdp.app`. A display icon appears in the menu bar.
 2. Choose **Settings…** and pick a login type (Login tab).
-3. Choose **Start Service**. macOS asks you to allow iRdp in Login Items if
-   needed, then asks iRdpService for **Screen Recording** and
-   **Accessibility**. Allow both, then stop and start the service. The
-   Permissions tab shows what the service reports.
+3. Choose **Start Service**. When a permission is missing, iRdp opens
+   Settings → Permissions at launch. Grant **Screen Recording** and
+   **Accessibility** to **iRdp** (they also apply to iRdpService inside the
+   app), then use **Restart Service**. The service itself never shows
+   permission prompts.
 4. In Windows App, add a PC with this Mac's address (Settings → General lists
    the addresses), set a user account with your user name and password, and
    accept the certificate warning on the first connection.
+
+Only the copy in `/Applications` (or `~/Applications`) registers the
+LaunchAgent; a development build run from Xcode starts the service as a child
+process, so the two never compete for the same agent.
 
 The service can also be controlled from Terminal:
 

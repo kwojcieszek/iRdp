@@ -12,7 +12,7 @@ public struct MacSessionResourcesFactory: Sendable {
         public var description: String {
             switch self {
             case .noDisplay: "no display is available"
-            case .screenRecordingNotGranted: "the Screen Recording permission is not granted to iRdpService (System Settings › Privacy & Security › Screen & System Audio Recording)"
+            case .screenRecordingNotGranted: "the Screen Recording permission is not granted to iRdp (open iRdp › Settings › Permissions on the Mac)"
             }
         }
     }
@@ -24,10 +24,7 @@ public struct MacSessionResourcesFactory: Sendable {
     }
 
     public func makeResources() throws -> RdpSessionResources {
-        guard PermissionChecker.isScreenRecordingGranted else {
-            PermissionChecker.requestScreenRecording()
-            throw FactoryError.screenRecordingNotGranted
-        }
+        guard PermissionChecker.isScreenRecordingGranted else { throw FactoryError.screenRecordingNotGranted }
         guard let display = DisplayCatalog.display(withID: resources.displayID) else { throw FactoryError.noDisplay }
         let geometry = CaptureGeometry(display: display, resolution: resources.resolution)
         let frameSource = ScreenCaptureFrameSource(displayID: display.id, desktopSize: geometry.desktopSize, framesPerSecond: resources.framesPerSecond)

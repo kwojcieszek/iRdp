@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import IRdpConfiguration
 import MacIntegration
@@ -25,6 +26,10 @@ final class AppModel {
     private(set) var localAddresses: [String] = []
     private(set) var hostName: String?
     private(set) var firewallState: FirewallState = .unknown
+    private(set) var permissions = PermissionState.current()
+    var selectedSettingsTab: SettingsTab = .general
+    /// Set at launch when a permission is missing, so the app opens the Permissions tab once.
+    var shouldPresentPermissions = false
     var errorMessage: String?
 
     init(paths: ApplicationPaths = .standard) {
@@ -34,6 +39,10 @@ final class AppModel {
         if settingsStore.modificationDate == nil { persistSettings() }
         refresh()
         refreshFirewallState()
+        if !permissions.isComplete {
+            selectedSettingsTab = .permissions
+            shouldPresentPermissions = true
+        }
         refreshTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(2))
@@ -48,6 +57,7 @@ final class AppModel {
     }
 
     var menuBarSymbolName: String {
+        if !permissions.isComplete { return "display.trianglebadge.exclamationmark" }
         if !(status?.sessions.isEmpty ?? true), isServiceRunning { return "display.2" }
         return isServiceRunning ? "display" : "display.trianglebadge.exclamationmark"
     }
@@ -70,6 +80,29 @@ final class AppModel {
         displays = DisplayCatalog.activeDisplays()
         localAddresses = NetworkAddressProvider.localIPv4Addresses()
         hostName = LocalHostNameProvider.bonjourHostName()
+        permissions = PermissionState.current()
+    }
+
+    /// Shows the system prompt for Screen Recording (macOS shows it only once; afterwards use System Settings).
+    func requestScreenRecording() {
+        if !PermissionChecker.requestScreenRecording() { openPrivacySettings(.screenRecording) }
+        refresh()
+    }
+
+    /// Shows the system prompt that leads to the Accessibility settings.
+    func requestAccessibility() {
+        PermissionChecker.requestAccessibility()
+        refresh()
+    }
+
+    func openPrivacySettings(_ pane: PrivacyPane) {
+        NSWorkspace.shared.open(pane.url)
+    }
+
+    /// Restarts the service so that it picks up newly granted permissions.
+    func restartService() {
+        stopService()
+        startService()
     }
 
     /// Reads the firewall state off the main thread (it runs `socketfilterfw`).

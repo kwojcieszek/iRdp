@@ -1,39 +1,47 @@
-import AppKit
 import SwiftUI
 
-/// Shows whether the service has the privacy permissions it needs.
+/// Shows whether iRdp has the privacy permissions it needs and how to grant them.
 struct PermissionsSettingsView: View {
     @Bindable var model: AppModel
 
-    private static let screenRecordingURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
-    private static let accessibilityURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
-
     var body: some View {
         Form {
-            Section("iRdpService needs") {
-                permissionRow("Screen Recording", detail: "to send the screen image", granted: model.status?.screenRecordingGranted, url: Self.screenRecordingURL)
-                permissionRow("Accessibility", detail: "to control the mouse and keyboard", granted: model.status?.accessibilityGranted, url: Self.accessibilityURL)
+            Section("iRdp needs") {
+                permissionRow("Screen Recording", detail: "to send the screen image", granted: model.permissions.screenRecording, pane: .screenRecording) {
+                    model.requestScreenRecording()
+                }
+                permissionRow("Accessibility", detail: "to control the mouse and keyboard", granted: model.permissions.accessibility, pane: .accessibility) {
+                    model.requestAccessibility()
+                }
+            }
+            if let status = model.status, status.isFresh(), model.permissions.isComplete, !(status.screenRecordingGranted && status.accessibilityGranted) {
+                Section {
+                    Label("The running service started before the permissions were granted.", systemImage: "arrow.clockwise")
+                    Button("Restart Service") { model.restartService() }
+                }
             }
             Section {
-                Text("Permissions are reported by the running service. After granting a permission, stop and start the service.")
+                Text("Grant the permissions to iRdp in System Settings › Privacy & Security. They also apply to iRdpService, which runs inside the app. Permissions are checked when iRdp starts.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
+        .onAppear { model.refresh() }
     }
 
-    private func permissionRow(_ title: String, detail: String, granted: Bool?, url: URL?) -> some View {
+    private func permissionRow(_ title: String, detail: String, granted: Bool, pane: PrivacyPane, request: @escaping () -> Void) -> some View {
         HStack {
-            Image(systemName: granted == true ? "checkmark.circle.fill" : "xmark.circle.fill")
-                .foregroundStyle(granted == true ? .green : .red)
+            Image(systemName: granted ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .foregroundStyle(granted ? .green : .red)
             VStack(alignment: .leading) {
                 Text(title)
-                Text(detail).font(.footnote).foregroundStyle(.secondary)
+                Text(granted ? "Granted" : detail).font(.footnote).foregroundStyle(.secondary)
             }
             Spacer()
-            Button("Open Settings") {
-                if let url { NSWorkspace.shared.open(url) }
+            if !granted {
+                Button("Grant…", action: request)
+                Button("Open Settings") { model.openPrivacySettings(pane) }
             }
         }
     }

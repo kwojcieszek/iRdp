@@ -8,10 +8,17 @@ final class ServiceController {
 
     private var childProcess: Process?
 
+    /// The LaunchAgent is used only by an installed copy (in an Applications folder), so that a development build
+    /// from Xcode never registers a second agent with the same label; development builds run the service as a child process.
     private var launchAgent: SMAppService? {
         let plist = Bundle.main.bundleURL.appendingPathComponent("Contents/Library/LaunchAgents/\(Self.launchAgentPlistName)")
-        guard FileManager.default.fileExists(atPath: plist.path) else { return nil }
+        guard FileManager.default.fileExists(atPath: plist.path), Self.isInstalled(Bundle.main.bundleURL) else { return nil }
         return SMAppService.agent(plistName: Self.launchAgentPlistName)
+    }
+
+    static func isInstalled(_ bundleURL: URL) -> Bool {
+        let path = bundleURL.standardizedFileURL.path
+        return path.hasPrefix("/Applications/") || path.hasPrefix(NSHomeDirectory() + "/Applications/")
     }
 
     var usesLaunchAgent: Bool { launchAgent != nil }
