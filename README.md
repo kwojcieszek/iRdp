@@ -89,6 +89,13 @@ Scripts/build-app.sh --install  # also copies it to /Applications
    the addresses), set a user account with your user name and password, and
    accept the certificate warning on the first connection.
 
+The service can also be controlled from Terminal:
+
+```bash
+/Applications/iRdp.app/Contents/MacOS/iRdp --start-service
+/Applications/iRdp.app/Contents/MacOS/iRdp --stop-service
+```
+
 The service reads `~/Library/Application Support/iRdp/settings.json` and
 writes `status.json` next to it. To see its log:
 
