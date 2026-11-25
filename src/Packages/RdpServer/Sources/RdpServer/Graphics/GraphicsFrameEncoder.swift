@@ -9,6 +9,8 @@ final class GraphicsFrameEncoder: FrameEncoding {
     static let surfaceId: UInt16 = 0
     /// Above this many region rectangles a frame updates the whole screen.
     static let maximumRegions = 256
+    /// Lossless tiles are sent in frames of at most this many bytes, so every RDPGFX message fits in one segment.
+    static let maximumRefinementBytes = 48 * 1024
     /// H.264 refinement frames for qualities without lossless sharpening.
     static let videoRefinementFrames = 2
 
@@ -82,9 +84,13 @@ final class GraphicsFrameEncoder: FrameEncoding {
         guard codec == .avc420, let frame = lastFrame else { return nil }
         if quality.sharpensStillImages {
             guard !lossyTiles.isEmpty else { return nil }
-            let tiles = lossyTiles
-            lossyTiles = []
-            return wrapFrame(encodePlanar(frame, tiles: tiles))
+            var content: [UInt8] = []
+            for tile in lossyTiles.sorted() {
+                content += encodePlanar(frame, tiles: [tile])
+                lossyTiles.remove(tile)
+                if content.count >= Self.maximumRefinementBytes { break }
+            }
+            return wrapFrame(content)
         }
         guard videoRefinementsLeft > 0, !lossyTiles.isEmpty else { return nil }
         videoRefinementsLeft -= 1

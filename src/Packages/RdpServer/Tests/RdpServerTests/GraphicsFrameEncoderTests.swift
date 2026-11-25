@@ -2,6 +2,10 @@ import RdpProtocol
 import Testing
 @testable import RdpServer
 
+enum SegmentedDataLimit {
+    static let single = 65535
+}
+
 struct GraphicsFrameEncoderTests {
     private func makeEncoder(codec: GraphicsPipelineCodec) -> GraphicsFrameEncoder {
         GraphicsFrameEncoder(desktopSize: DesktopSize(width: 200, height: 100), codec: codec, quality: StreamingQuality(videoBitRate: 2_000_000)) { [$0] }
@@ -62,6 +66,22 @@ struct GraphicsFrameEncoderTests {
         let used = try codecs(refinement[0])
         #expect(used.count == 8 && used.allSatisfy { $0 == GraphicsCodec.planar })
         #expect(encoder.refinement() == nil, "nothing left to sharpen")
+    }
+
+    @Test func splitsLargeRefinementsIntoSmallFrames() throws {
+        let encoder = GraphicsFrameEncoder(desktopSize: DesktopSize(width: 640, height: 384), codec: .avc420, quality: StreamingQuality(videoBitRate: 2_000_000)) { [$0] }
+        var pixels = [UInt8](repeating: 0, count: 640 * 384 * 4)
+        for index in pixels.indices { pixels[index] = UInt8.random(in: 0...255) }
+        _ = encoder.encode(ScreenFrame(width: 640, height: 384, bytesPerRow: 2560, pixels: pixels), forceFullUpdate: true)
+        var steps = 0
+        var tiles = 0
+        while let messages = encoder.refinement() {
+            steps += 1
+            #expect(messages[0].count <= SegmentedDataLimit.single, "fits in one segment")
+            tiles += try codecs(messages[0]).count
+        }
+        #expect(tiles == 60)
+        #expect(steps > 1)
     }
 
     @Test func videoUpdatesOnlyChangedRegions() throws {

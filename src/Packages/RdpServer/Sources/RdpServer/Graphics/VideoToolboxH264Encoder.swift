@@ -3,7 +3,7 @@ import CoreVideo
 import Foundation
 import VideoToolbox
 
-/// Hardware H.264 encoder (VideoToolbox) tuned for low latency: real-time, no frame reordering, low-latency rate control.
+/// Hardware H.264 encoder (VideoToolbox) tuned for low latency: real-time, no frame reordering, no frame delay.
 /// Produces Annex B streams with SPS/PPS before every key frame. Not thread safe; use from one queue.
 final class VideoToolboxH264Encoder {
     private final class OutputBox: @unchecked Sendable {
@@ -21,9 +21,10 @@ final class VideoToolboxH264Encoder {
     init(width: Int, height: Int, bitRate: Int, framesPerSecond: Int) throws {
         self.width = width
         self.height = height
+        // Plain hardware real-time encoding. The low-latency rate control mode is not used: it produces long-term
+        // reference frames that some RDP clients (Microsoft's decoder) do not handle, which showed up as gray areas.
         let specification: [CFString: Any] = [
-            kVTVideoEncoderSpecification_EnableLowLatencyRateControl: true,
-            kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder: true,
+            kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder: true,
         ]
         let attributes: [CFString: Any] = [
             kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA,
@@ -32,24 +33,17 @@ final class VideoToolboxH264Encoder {
             kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary,
         ]
         var created: VTCompressionSession?
-        var status = VTCompressionSessionCreate(
+        let status = VTCompressionSessionCreate(
             allocator: nil, width: Int32(width), height: Int32(height), codecType: kCMVideoCodecType_H264,
             encoderSpecification: specification as CFDictionary, imageBufferAttributes: attributes as CFDictionary,
             compressedDataAllocator: nil, outputCallback: nil, refcon: nil, compressionSessionOut: &created
         )
-        if status != noErr {
-            // Fall back to a normal real-time session where low-latency rate control is unavailable.
-            status = VTCompressionSessionCreate(
-                allocator: nil, width: Int32(width), height: Int32(height), codecType: kCMVideoCodecType_H264,
-                encoderSpecification: nil, imageBufferAttributes: attributes as CFDictionary,
-                compressedDataAllocator: nil, outputCallback: nil, refcon: nil, compressionSessionOut: &created
-            )
-        }
         guard status == noErr, let created else { throw H264EncoderError.sessionCreationFailed(status) }
         session = created
         let properties: [CFString: Any] = [
             kVTCompressionPropertyKey_RealTime: true,
-            kVTCompressionPropertyKey_ProfileLevel: kVTProfileLevel_H264_ConstrainedBaseline_AutoLevel,
+            kVTCompressionPropertyKey_ProfileLevel: kVTProfileLevel_H264_Main_AutoLevel,
+            kVTCompressionPropertyKey_H264EntropyMode: kVTH264EntropyMode_CABAC,
             kVTCompressionPropertyKey_AllowFrameReordering: false,
             kVTCompressionPropertyKey_AverageBitRate: bitRate,
             kVTCompressionPropertyKey_ExpectedFrameRate: framesPerSecond,

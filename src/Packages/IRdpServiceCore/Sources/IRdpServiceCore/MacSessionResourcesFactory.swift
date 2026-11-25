@@ -31,6 +31,9 @@ public struct MacSessionResourcesFactory: Sendable {
         let input: (any InputSink)? = resources.shareKeyboard || resources.shareMouse
             ? CoreGraphicsInputInjector(geometry: geometry, allowsKeyboard: resources.shareKeyboard, allowsMouse: resources.shareMouse, swapControlAndCommand: resources.swapControlAndCommand)
             : nil
+        if let snapshots = ProcessInfo.processInfo.environment["IRDP_DEBUG_SNAPSHOT_DIR"], !snapshots.isEmpty {
+            return RdpSessionResources(frameSource: DiagnosticSnapshotFrameSource(wrapping: frameSource, directory: URL(fileURLWithPath: snapshots)), inputSink: input)
+        }
         return RdpSessionResources(frameSource: frameSource, inputSink: input)
     }
 }

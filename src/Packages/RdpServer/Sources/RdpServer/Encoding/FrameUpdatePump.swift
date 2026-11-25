@@ -8,6 +8,8 @@ final class FrameUpdatePump: @unchecked Sendable {
 
     static let maximumFramesInFlight = 2
     static let refinementDelay: DispatchTimeInterval = .milliseconds(250)
+    /// Delay between the steps of one refinement once it has started.
+    static let refinementContinuationDelay: DispatchTimeInterval = .milliseconds(5)
 
     private let queue = DispatchQueue(label: "com.irdp.frame-pump", qos: .userInteractive)
     private let send: Sender
@@ -114,11 +116,11 @@ final class FrameUpdatePump: @unchecked Sendable {
     }
 
     /// While the screen is still, asks the encoder to improve the image (e.g. lossless tiles over H.264).
-    private func scheduleRefinement() {
+    private func scheduleRefinement(continuing: Bool = false) {
         guard pendingFrame == nil else { return }
         refinementGeneration += 1
         let generation = refinementGeneration
-        queue.asyncAfter(deadline: .now() + Self.refinementDelay) {
+        queue.asyncAfter(deadline: .now() + (continuing ? Self.refinementContinuationDelay : Self.refinementDelay)) {
             guard generation == self.refinementGeneration, self.pendingFrame == nil, !self.isSending, !self.isStopped, !self.isPaused, self.canSendFrame else { return }
             guard let packets = self.encoder.refinement(), !packets.isEmpty else { return }
             self.isSending = true
@@ -128,7 +130,7 @@ final class FrameUpdatePump: @unchecked Sendable {
                 self.queue.async {
                     self.isSending = false
                     self.processIfIdle()
-                    self.scheduleRefinement()
+                    self.scheduleRefinement(continuing: true)
                 }
             }
         }

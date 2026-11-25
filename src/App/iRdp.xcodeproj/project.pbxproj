@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		079E1A12E08243889278A7BB /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D6138986611A4DAB96348670 /* Assets.xcassets */; };
 		0FEC145ACD28F4BCB3CB80F0 /* com.irdp.service.plist in CopyFiles */ = {isa = PBXBuildFile; fileRef = E746FD990B841FCD8E463BBC /* com.irdp.service.plist */; };
 		141158E602D63297438D5463 /* PermissionState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B37E33A9D5467A872259436C /* PermissionState.swift */; };
 		1A812DD406C2F5CA664802EE /* SignalSources.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F86D566DFFC76C31D063AF9 /* SignalSources.swift */; };
@@ -65,6 +66,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		D6138986611A4DAB96348670 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		08318AE2914E0FD7AD3830C8 /* PrivacyPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyPane.swift; sourceTree = "<group>"; };
 		083FEF059397B910CF06A093 /* GeneralSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneralSettingsView.swift; sourceTree = "<group>"; };
 		0F86D566DFFC76C31D063AF9 /* SignalSources.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalSources.swift; sourceTree = "<group>"; };
@@ -127,6 +129,7 @@
 		4C30BA4E0E4A2DD04D2CEC85 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				D6138986611A4DAB96348670 /* Assets.xcassets */,
 				E746FD990B841FCD8E463BBC /* com.irdp.service.plist */,
 			);
 			path = Resources;
@@ -217,6 +220,7 @@
 			buildConfigurationList = 5B3F9ED0E0F95114F8FBB193 /* Build configuration list for PBXNativeTarget "iRdp" */;
 			buildPhases = (
 				7AF96B04480BC693CAF05463 /* Sources */,
+				AC4428F720584C9EA6592070 /* Resources */,
 				00D7B924FDF5C9D517371C60 /* CopyFiles */,
 				B65EA576B7A2643A3C3D2082 /* Frameworks */,
 				AAA573375E6A431672E2D5FE /* Embed Dependencies */,
@@ -280,6 +284,17 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		AC4428F720584C9EA6592070 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				079E1A12E08243889278A7BB /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		6E5F9A99A20ED26A5788C705 /* Sources */ = {
