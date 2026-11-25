@@ -34,6 +34,10 @@ final class RdpConnectionHandler: ChannelInboundHandler {
     private var pump: FrameUpdatePump?
     private var isRegistered = false
     private var logonForm: LogonForm?
+    /// Set only after the credentials were verified; input and screen capture require it.
+    private var isAuthenticated = false
+    /// Receives input only while an authenticated desktop session runs.
+    private var authenticatedInputSink: (any InputSink)?
     private var logonRenderer: LogonScreenRenderer?
     private var drdynvcChannelId: UInt16?
     private var graphicsChannel = GraphicsChannelController()
@@ -203,6 +207,7 @@ final class RdpConnectionHandler: ChannelInboundHandler {
             disconnect(errorInfo: SetErrorInfoPdu.serverDeniedConnection, reason: "too many failed logins")
             return
         }
+        isAuthenticated = isValid
         switch result {
         case .success(let resources):
             self.resources = resources
@@ -311,11 +316,12 @@ final class RdpConnectionHandler: ChannelInboundHandler {
 
     private func dispatch(_ events: [RdpInputEvent]) {
         guard phase == .active else { return }
-        if logonForm != nil {
-            events.forEach { handleLogonInput($0) }
+        // Until the user is authenticated, input only ever reaches the logon screen.
+        guard isAuthenticated, logonForm == nil else {
+            if logonForm != nil { events.forEach { handleLogonInput($0) } }
             return
         }
-        guard let sink = resources?.inputSink else { return }
+        guard let sink = authenticatedInputSink else { return }
         events.forEach { sink.handle($0) }
     }
 
@@ -366,6 +372,7 @@ final class RdpConnectionHandler: ChannelInboundHandler {
     private func logonVerified(userName: String, isValid: Bool, isLockedOut: Bool) {
         guard phase == .active, logonForm != nil else { return }
         if isValid {
+            isAuthenticated = true
             logonForm = nil
             logonRenderer = nil
             clientInfo?.userName = userName
@@ -414,7 +421,8 @@ final class RdpConnectionHandler: ChannelInboundHandler {
 
     /// Registers the session and starts sharing the screen.
     private func startDesktop() {
-        guard let context, let resources, let pump else { return }
+        guard isAuthenticated, logonForm == nil, let context, let resources, let pump else { return }
+        authenticatedInputSink = resources.inputSink
         let bound = NIOLoopBound(self, eventLoop: context.eventLoop)
         let eventLoop = context.eventLoop
         let replaced = registry.register(sessionId, maximumSessions: configuration.maximumSessions) {
@@ -546,8 +554,10 @@ final class RdpConnectionHandler: ChannelInboundHandler {
         phase = .closed
         pump?.stop()
         pump = nil
+        authenticatedInputSink?.releaseAll()
+        authenticatedInputSink = nil
+        isAuthenticated = false
         if let resources {
-            resources.inputSink?.releaseAll()
             let frameSource = resources.frameSource
             Task { await frameSource.stop() }
             self.resources = nil
