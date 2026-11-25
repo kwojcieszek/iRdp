@@ -18,7 +18,7 @@ final class RdpTestClient: Sendable {
     }
 
     /// Connects and runs the protocol until the server answers the X.224 connection request.
-    static func connect(port: Int, requestedProtocols: SecurityProtocols = [.tls, .credSsp]) async throws -> (RdpTestClient, X224ConnectionConfirm) {
+    static func connect(host: String = "127.0.0.1", port: Int, requestedProtocols: SecurityProtocols = [.tls, .credSsp]) async throws -> (RdpTestClient, X224ConnectionConfirm) {
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
         let (stream, continuation) = AsyncStream<[UInt8]>.makeStream()
         let channel = try await ClientBootstrap(group: group)
@@ -28,7 +28,7 @@ final class RdpTestClient: Sendable {
                     try channel.pipeline.syncOperations.addHandler(FrameCollector(continuation: continuation))
                 }
             }
-            .connect(host: "127.0.0.1", port: port).get()
+            .connect(host: host, port: port).get()
         let client = RdpTestClient(channel: channel, inbox: FrameInbox(stream: stream), group: group, userId: 0)
         try await client.send(TpktPacket.wrap(X224ConnectionRequest(cookie: "mstshash=test", requestedProtocols: requestedProtocols).encode()))
         let confirm = try X224ConnectionConfirm.parse(TpktPacket.unwrap(try await client.nextFrame()))

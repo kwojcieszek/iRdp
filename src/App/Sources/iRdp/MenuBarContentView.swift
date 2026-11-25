@@ -8,6 +8,9 @@ struct MenuBarContentView: View {
 
     var body: some View {
         Text(model.statusSummary)
+        if model.isServiceRunning, model.settings.listenAddress != "127.0.0.1", let address = model.connectionAddresses.first {
+            Text("Connect to \(address)")
+        }
         if let sessions = model.status?.sessions, model.isServiceRunning, !sessions.isEmpty {
             ForEach(sessions) { session in
                 Text("\(session.userName.isEmpty ? "Guest" : session.userName) — \(session.clientName) (\(session.remoteAddress))")

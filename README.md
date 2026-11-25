@@ -29,6 +29,13 @@ It has two parts:
   the mouse are shared, and an optional Ctrl/Command swap.
 - A self-signed TLS certificate is generated on first start. Its SHA-256
   fingerprint is shown in Settings → General.
+- Connections from other computers on the network: with "Other computers on
+  the network" (the default) the service listens on all interfaces, IPv4 and
+  IPv6. Settings → General lists the addresses to use (Bonjour name such as
+  `Mac-Studio.local` and IP addresses) and the state of the macOS firewall.
+  "This Mac only" restricts the service to `127.0.0.1`.
+- After 5 failed logins within 5 minutes an address is locked out for 5
+  minutes.
 - A new session replaces the previous one.
 
 Not included by design: clipboard, audio, drives and printers. NLA (CredSSP)

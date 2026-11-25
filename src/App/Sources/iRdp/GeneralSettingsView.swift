@@ -24,18 +24,24 @@ struct GeneralSettingsView: View {
             Section("Network") {
                 TextField("Port", value: $model.settings.port, format: .number.grouping(.never))
                 Picker("Accept connections from", selection: $model.settings.listenAddress) {
-                    Text("All networks").tag("0.0.0.0")
+                    Text("Other computers on the network").tag("0.0.0.0")
                     Text("This Mac only").tag("127.0.0.1")
                 }
-                if !model.localAddresses.isEmpty {
+                if model.settings.listenAddress == "127.0.0.1" {
+                    Text("Only RDP clients running on this Mac can connect.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } else {
                     LabeledContent("Connect to") {
                         VStack(alignment: .trailing) {
-                            ForEach(model.localAddresses, id: \.self) { address in
-                                Text(model.settings.port == 3389 ? address : "\(address):\(model.settings.port)")
-                                    .textSelection(.enabled)
+                            ForEach(model.connectionAddresses, id: \.self) { address in
+                                Text(address).textSelection(.enabled)
                             }
                         }
                     }
+                    Label(model.firewallState.displayText, systemImage: model.firewallState.allowsIncomingConnections ? "checkmark.shield" : "exclamationmark.shield")
+                        .font(.footnote)
+                        .foregroundStyle(model.firewallState.allowsIncomingConnections ? Color.secondary : Color.orange)
                 }
             }
             if let fingerprint = model.status?.certificateFingerprint {
@@ -47,5 +53,6 @@ struct GeneralSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .onAppear { model.refreshFirewallState() }
     }
 }

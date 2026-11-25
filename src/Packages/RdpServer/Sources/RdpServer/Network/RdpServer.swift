@@ -14,12 +14,17 @@ public final class RdpServer: Sendable {
     public let configuration: RdpServerConfiguration
     private let environment: RdpSessionEnvironment
     private let registry = RdpSessionRegistry()
+    private let throttle: AuthenticationThrottle
     private let runtime = Mutex<Runtime?>(nil)
 
-    public init(configuration: RdpServerConfiguration, environment: RdpSessionEnvironment) {
+    public init(configuration: RdpServerConfiguration, environment: RdpSessionEnvironment, throttle: AuthenticationThrottle = AuthenticationThrottle()) {
         self.configuration = configuration
         self.environment = environment
+        self.throttle = throttle
     }
+
+    /// Address used for "0.0.0.0": the IPv6 wildcard, which also accepts IPv4 clients (dual stack).
+    static let dualStackWildcard = "::"
 
     /// Number of sessions that completed the connection sequence.
     public var activeSessionCount: Int { registry.count }
@@ -36,6 +41,7 @@ public final class RdpServer: Sendable {
         let configuration = configuration
         let environment = environment
         let registry = registry
+        let throttle = throttle
         let bootstrap = ServerBootstrap(group: group)
             .serverChannelOption(ChannelOptions.backlog, value: 16)
             .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
@@ -45,11 +51,20 @@ public final class RdpServer: Sendable {
                 channel.eventLoop.makeCompletedFuture {
                     let operations = channel.pipeline.syncOperations
                     try operations.addHandler(ByteToMessageHandler(RdpFrameDecoder()))
-                    try operations.addHandler(RdpConnectionHandler(configuration: configuration, environment: environment, sslContext: sslContext, registry: registry))
+                    try operations.addHandler(RdpConnectionHandler(configuration: configuration, environment: environment, sslContext: sslContext, registry: registry, throttle: throttle))
                 }
             }
         do {
-            let channel = try await bootstrap.bind(host: configuration.host, port: configuration.port).get()
+            let channel: any Channel
+            if configuration.host == "0.0.0.0" {
+                do {
+                    channel = try await bootstrap.bind(host: Self.dualStackWildcard, port: configuration.port).get()
+                } catch {
+                    channel = try await bootstrap.bind(host: configuration.host, port: configuration.port).get()
+                }
+            } else {
+                channel = try await bootstrap.bind(host: configuration.host, port: configuration.port).get()
+            }
             runtime.withLock { $0 = Runtime(group: group, channel: channel) }
             return channel.localAddress?.port ?? configuration.port
         } catch {

@@ -23,6 +23,8 @@ final class AppModel {
     private(set) var isServiceEnabled = false
     private(set) var displays: [DisplayInfo] = []
     private(set) var localAddresses: [String] = []
+    private(set) var hostName: String?
+    private(set) var firewallState: FirewallState = .unknown
     var errorMessage: String?
 
     init(paths: ApplicationPaths = .standard) {
@@ -31,6 +33,7 @@ final class AppModel {
         settings = settingsStore.load()
         if settingsStore.modificationDate == nil { persistSettings() }
         refresh()
+        refreshFirewallState()
         refreshTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(2))
@@ -66,6 +69,21 @@ final class AppModel {
         isServiceEnabled = serviceController.isEnabled
         displays = DisplayCatalog.activeDisplays()
         localAddresses = NetworkAddressProvider.localIPv4Addresses()
+        hostName = LocalHostNameProvider.bonjourHostName()
+    }
+
+    /// Reads the firewall state off the main thread (it runs `socketfilterfw`).
+    func refreshFirewallState() {
+        Task.detached {
+            let state = FirewallInspector.currentState()
+            await MainActor.run { self.firewallState = state }
+        }
+    }
+
+    /// Addresses other computers can type into their RDP client.
+    var connectionAddresses: [String] {
+        let suffix = settings.port == ServerSettings.defaultPort ? "" : ":\(settings.port)"
+        return ([hostName].compactMap { $0 } + localAddresses).map { $0 + suffix }
     }
 
     func startService() {

@@ -16,6 +16,7 @@ final class RdpConnectionHandler: ChannelInboundHandler {
     private let environment: RdpSessionEnvironment
     private let sslContext: NIOSSLContext
     private let registry: RdpSessionRegistry
+    private let throttle: AuthenticationThrottle
     private let sessionId = UUID()
 
     private var context: ChannelHandlerContext?
@@ -33,18 +34,19 @@ final class RdpConnectionHandler: ChannelInboundHandler {
     private var pump: FrameUpdatePump?
     private var isRegistered = false
 
-    init(configuration: RdpServerConfiguration, environment: RdpSessionEnvironment, sslContext: NIOSSLContext, registry: RdpSessionRegistry) {
+    init(configuration: RdpServerConfiguration, environment: RdpSessionEnvironment, sslContext: NIOSSLContext, registry: RdpSessionRegistry, throttle: AuthenticationThrottle) {
         self.configuration = configuration
         self.environment = environment
         self.sslContext = sslContext
         self.registry = registry
+        self.throttle = throttle
     }
 
     // MARK: - Channel events
 
     func handlerAdded(context: ChannelHandlerContext) {
         self.context = context
-        remoteAddress = context.channel.remoteAddress?.ipAddress ?? "unknown"
+        remoteAddress = RemoteAddressFormatter.string(for: context.channel.remoteAddress)
     }
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
@@ -155,8 +157,14 @@ final class RdpConnectionHandler: ChannelInboundHandler {
         let environment = environment
         let bound = NIOLoopBound(self, eventLoop: context.eventLoop)
         let eventLoop = context.eventLoop
+        let throttle = throttle
+        let address = remoteAddress
         Task {
-            let isValid = await environment.credentialValidator.validate(credentials)
+            let isLockedOut = throttle.isLockedOut(address)
+            let isValid = isLockedOut ? false : await environment.credentialValidator.validate(credentials)
+            if !isLockedOut {
+                if isValid { throttle.recordSuccess(address) } else { throttle.recordFailure(address) }
+            }
             var result: Result<RdpSessionResources, any Error>?
             if isValid {
                 do {
