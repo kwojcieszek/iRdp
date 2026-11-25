@@ -33,6 +33,8 @@ final class RdpConnectionHandler: ChannelInboundHandler {
     private var clientSupportsCompressionWithoutHeader = false
     private var pump: FrameUpdatePump?
     private var isRegistered = false
+    private var logonForm: LogonForm?
+    private var keyTranslator = KeyboardTextTranslator(keyboardLayout: 0)
 
     init(configuration: RdpServerConfiguration, environment: RdpSessionEnvironment, sslContext: NIOSSLContext, registry: RdpSessionRegistry, throttle: AuthenticationThrottle) {
         self.configuration = configuration
@@ -162,48 +164,60 @@ final class RdpConnectionHandler: ChannelInboundHandler {
         Task {
             let isLockedOut = throttle.isLockedOut(address)
             let isValid = isLockedOut ? false : await environment.credentialValidator.validate(credentials)
-            if !isLockedOut {
+            // An empty password means the client wants the logon screen; it is not a failed attempt.
+            if !isLockedOut, isValid || !credentials.password.isEmpty {
                 if isValid { throttle.recordSuccess(address) } else { throttle.recordFailure(address) }
             }
-            var result: Result<RdpSessionResources, any Error>?
-            if isValid {
-                do {
-                    result = .success(try await environment.makeSessionResources())
-                } catch {
-                    result = .failure(error)
-                }
+            let result: Result<RdpSessionResources, any Error>
+            do {
+                result = .success(try await environment.makeSessionResources())
+            } catch {
+                result = .failure(error)
             }
-            let outcome = result
             eventLoop.execute {
-                bound.value.authenticationFinished(isValid: isValid, resources: outcome)
+                bound.value.authenticationFinished(isValid: isValid, isLockedOut: isLockedOut, resources: result)
             }
         }
     }
 
-    private func authenticationFinished(isValid: Bool, resources result: Result<RdpSessionResources, any Error>?) {
+    private func authenticationFinished(isValid: Bool, isLockedOut: Bool, resources result: Result<RdpSessionResources, any Error>) {
         guard phase == .authenticating else {
             if case .success(let resources) = result { Task { await resources.frameSource.stop() } }
             return
         }
         sendMcs(.sendDataIndication(userId: userId, channelId: McsChannel.ioChannelId, data: LicenseErrorMessage.validClient()))
-        guard isValid else {
-            Self.logger.notice("authentication failed for user \(self.clientInfo?.userName ?? "", privacy: .public) from \(self.remoteAddress, privacy: .public)")
-            disconnect(errorInfo: SetErrorInfoPdu.serverDeniedConnection, reason: "authentication failed")
+        guard !isLockedOut else {
+            if case .success(let resources) = result { Task { await resources.frameSource.stop() } }
+            disconnect(errorInfo: SetErrorInfoPdu.serverDeniedConnection, reason: "too many failed logins")
             return
         }
         switch result {
-        case .success(let resources)?:
+        case .success(let resources):
             self.resources = resources
             desktopSize = resources.frameSource.desktopSize
-            bitsPerPixel = negotiateBitsPerPixel()
-            let capabilities = ServerCapabilities.make(desktopWidth: UInt16(desktopSize.width), desktopHeight: UInt16(desktopSize.height), bitsPerPixel: UInt16(bitsPerPixel))
-            sendShareControl(.demandActive, body: DemandActivePdu(shareId: Self.shareId, capabilities: capabilities).encode())
-            phase = .awaitingConfirmActive
-        case .failure(let error)?:
-            disconnect(errorInfo: SetErrorInfoPdu.serverDeniedConnection, reason: "cannot share the screen: \(error)")
-        case nil:
-            disconnect(errorInfo: SetErrorInfoPdu.serverDeniedConnection, reason: "no session resources")
+            if !isValid {
+                let userName = clientInfo?.userName ?? ""
+                let password = clientInfo?.password ?? ""
+                Self.logger.notice("credentials of \(userName, privacy: .public) from \(self.remoteAddress, privacy: .public) not accepted, showing logon screen")
+                logonForm = LogonForm(userName: userName, message: password.isEmpty ? nil : "The user name or password is incorrect.")
+            }
+        case .failure(let error):
+            Self.logger.error("cannot share the screen with \(self.remoteAddress, privacy: .public): \(String(describing: error), privacy: .public)")
+            environment.observer?.connectionDidFail(remoteAddress: remoteAddress, reason: "cannot share the screen: \(error)")
+            desktopSize = clientDesktopSize()
+            logonForm = .messageOnly("iRdp cannot share the screen: \(error). Grant the permission on the Mac and connect again.")
         }
+        keyTranslator = KeyboardTextTranslator(keyboardLayout: clientData?.core.keyboardLayout ?? 0)
+        bitsPerPixel = negotiateBitsPerPixel()
+        let capabilities = ServerCapabilities.make(desktopWidth: UInt16(desktopSize.width), desktopHeight: UInt16(desktopSize.height), bitsPerPixel: UInt16(bitsPerPixel))
+        sendShareControl(.demandActive, body: DemandActivePdu(shareId: Self.shareId, capabilities: capabilities).encode())
+        phase = .awaitingConfirmActive
+    }
+
+    private func clientDesktopSize() -> DesktopSize {
+        let width = Int(clientData?.core.desktopWidth ?? 1024)
+        let height = Int(clientData?.core.desktopHeight ?? 768)
+        return DesktopSize(width: min(max(width, 640), 4096) & ~3, height: min(max(height, 480), 4096) & ~1)
     }
 
     private func negotiateBitsPerPixel() -> Int {
@@ -278,14 +292,86 @@ final class RdpConnectionHandler: ChannelInboundHandler {
     }
 
     private func dispatch(_ events: [RdpInputEvent]) {
-        guard phase == .active, let sink = resources?.inputSink else { return }
+        guard phase == .active else { return }
+        if logonForm != nil {
+            events.forEach { handleLogonInput($0) }
+            return
+        }
+        guard let sink = resources?.inputSink else { return }
         events.forEach { sink.handle($0) }
+    }
+
+    // MARK: - Logon screen
+
+    private var serverName: String { configuration.serverName }
+
+    private func renderLogonScreen() {
+        guard let logonForm, let pump else { return }
+        pump.submit(LogonScreenRenderer.render(logonForm, size: desktopSize, serverName: serverName))
+    }
+
+    private func handleLogonInput(_ event: RdpInputEvent) {
+        guard var form = logonForm, let key = keyTranslator.translate(event) else { return }
+        let action = form.handle(key)
+        logonForm = form
+        switch action {
+        case .none:
+            return
+        case .changed:
+            renderLogonScreen()
+        case .submit(let userName, let password):
+            renderLogonScreen()
+            verifyLogon(userName: userName, password: password)
+        }
+    }
+
+    private func verifyLogon(userName: String, password: String) {
+        guard let context else { return }
+        let environment = environment
+        let throttle = throttle
+        let address = remoteAddress
+        let bound = NIOLoopBound(self, eventLoop: context.eventLoop)
+        let eventLoop = context.eventLoop
+        Task {
+            let isLockedOut = throttle.isLockedOut(address)
+            let isValid = isLockedOut ? false : await environment.credentialValidator.validate(ClientCredentials(userName: userName, password: password))
+            if !isLockedOut {
+                if isValid { throttle.recordSuccess(address) } else { throttle.recordFailure(address) }
+            }
+            let lockedNow = throttle.isLockedOut(address)
+            eventLoop.execute { bound.value.logonVerified(userName: userName, isValid: isValid, isLockedOut: lockedNow) }
+        }
+    }
+
+    private func logonVerified(userName: String, isValid: Bool, isLockedOut: Bool) {
+        guard phase == .active, logonForm != nil else { return }
+        if isValid {
+            logonForm = nil
+            clientInfo?.userName = userName
+            startDesktop()
+            return
+        }
+        Self.logger.notice("logon screen: credentials of \(userName, privacy: .public) from \(self.remoteAddress, privacy: .public) rejected")
+        if isLockedOut {
+            logonForm = .messageOnly("Too many failed attempts. Try again in a few minutes.")
+            renderLogonScreen()
+            environment.observer?.connectionDidFail(remoteAddress: remoteAddress, reason: "too many failed logins")
+            if let context {
+                let bound = NIOLoopBound(self, eventLoop: context.eventLoop)
+                context.eventLoop.scheduleTask(in: .seconds(3)) {
+                    bound.value.disconnect(errorInfo: SetErrorInfoPdu.serverDeniedConnection, reason: "too many failed logins")
+                }
+            }
+            return
+        }
+        logonForm?.rejected(message: "The user name or password is incorrect.")
+        renderLogonScreen()
     }
 
     // MARK: - Active session
 
     private func activate() {
-        guard let context, let resources else { return }
+        guard let context, resources != nil || logonForm != nil else { return }
         phase = .active
         send(FastPathUpdate.pdu([FastPathUpdate(code: .defaultPointer)]))
         let channel = context.channel
@@ -306,6 +392,16 @@ final class RdpConnectionHandler: ChannelInboundHandler {
             }
         }
         self.pump = pump
+        if logonForm != nil {
+            renderLogonScreen()
+        } else {
+            startDesktop()
+        }
+    }
+
+    /// Registers the session and starts sharing the screen.
+    private func startDesktop() {
+        guard let context, let resources, let pump else { return }
         let bound = NIOLoopBound(self, eventLoop: context.eventLoop)
         let eventLoop = context.eventLoop
         let replaced = registry.register(sessionId, maximumSessions: configuration.maximumSessions) {
@@ -376,7 +472,7 @@ final class RdpConnectionHandler: ChannelInboundHandler {
     }
 
     private func tearDown() {
-        let wasActive = phase == .active
+        let wasActive = isRegistered
         phase = .closed
         pump?.stop()
         pump = nil

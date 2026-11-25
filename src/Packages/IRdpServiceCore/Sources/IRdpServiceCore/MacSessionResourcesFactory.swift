@@ -12,7 +12,7 @@ public struct MacSessionResourcesFactory: Sendable {
         public var description: String {
             switch self {
             case .noDisplay: "no display is available"
-            case .screenRecordingNotGranted: "Screen Recording permission is not granted to iRdpService"
+            case .screenRecordingNotGranted: "the Screen Recording permission is not granted to iRdpService (System Settings › Privacy & Security › Screen & System Audio Recording)"
             }
         }
     }

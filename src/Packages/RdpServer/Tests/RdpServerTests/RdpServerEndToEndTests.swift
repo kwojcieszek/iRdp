@@ -63,31 +63,73 @@ struct RdpServerEndToEndTests {
         #expect(server.activeSessionCount == 0)
     }
 
-    @Test func wrongPasswordIsRejected() async throws {
+    /// Scancode events typing `text` on a US keyboard.
+    private func typing(_ text: String) -> [RdpInputEvent] {
+        var events: [RdpInputEvent] = []
+        for character in text {
+            guard let (scancode, (plain, _)) = KeyboardTextTranslator.usLayout.first(where: { $0.value.0 == character || $0.value.1 == character }) else { continue }
+            let shifted = plain != character
+            if shifted { events.append(.keyboard(scancode: 0x2A, isExtended: false, isRelease: false)) }
+            events.append(.keyboard(scancode: scancode, isExtended: false, isRelease: false))
+            events.append(.keyboard(scancode: scancode, isExtended: false, isRelease: true))
+            if shifted { events.append(.keyboard(scancode: 0x2A, isExtended: false, isRelease: true)) }
+        }
+        return events
+    }
+
+    private func pressing(_ scancode: UInt8) -> [RdpInputEvent] {
+        [.keyboard(scancode: scancode, isExtended: false, isRelease: false), .keyboard(scancode: scancode, isExtended: false, isRelease: true)]
+    }
+
+    @Test(arguments: ["", "wrong"])
+    func missingOrWrongCredentialsShowLogonScreenThatSignsIn(clientPassword: String) async throws {
+        let sink = RecordingInputSink()
         let observer = RecordingObserver()
-        let server = makeServer(observer: observer)
+        let server = makeServer(inputSink: sink, observer: observer)
         let port = try await server.start()
         defer { Task { await server.stop() } }
 
-        let (client, _) = try await RdpTestClient.connect(port: port)
-        let session = try await client.connectSession(userName: "kamil", password: "wrong")
-        var errorInfo: UInt32?
-        do {
-            while errorInfo == nil {
-                let data = try await session.nextIoData()
-                if data.starts(with: [0x80, 0x00]) { continue }
-                for pdu in try SharePdu.parseAll(data) where pdu.dataType == .setErrorInfo {
-                    var reader = ByteReader(pdu.body)
-                    errorInfo = try reader.readUInt32LE()
-                }
-            }
-        } catch RdpTestClientError.connectionClosed {}
-        #expect(errorInfo == SetErrorInfoPdu.serverDeniedConnection)
-        await #expect(throws: RdpTestClientError.self) {
-            while true { _ = try await session.nextFrame() }
-        }
+        let session = try await RdpTestClient.connect(port: port).0.connectSession(userName: clientPassword.isEmpty ? "" : "kamil", password: clientPassword)
+        let bitmap = try await session.activate()
+        #expect(bitmap.desktopWidth == 320, "the logon screen uses the desktop size")
+        let first = try await session.nextFastPathUpdates()
+        #expect(!first.isEmpty)
+        #expect(observer.startedSessions.isEmpty, "no session before signing in")
+
+        // Wrong password on the logon screen keeps the logon screen.
+        let wrong = clientPassword.isEmpty ? typing("kamil") + pressing(0x0F) + typing("nope") + pressing(0x1C) : typing("nope") + pressing(0x1C)
+        try await session.send(FastPathInputPdu.encode(wrong))
+        try await Task.sleep(for: .milliseconds(200))
         #expect(observer.startedSessions.isEmpty)
-        #expect(observer.failureReasons.contains("authentication failed"))
+        #expect(sink.events.isEmpty, "logon input never reaches the Mac")
+
+        try await session.send(FastPathInputPdu.encode(typing("secret") + pressing(0x1C)))
+        for _ in 0..<100 where observer.startedSessions.isEmpty { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(observer.startedSessions.first?.userName == "kamil")
+
+        try await session.send(FastPathInputPdu.encode([.mouse(flags: [.move], x: 1, y: 2)]))
+        for _ in 0..<50 where sink.events.isEmpty { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(sink.events == [.mouse(flags: [.move], x: 1, y: 2)])
+        await session.close()
+    }
+
+    @Test func screenSharingErrorIsShownToTheClient() async throws {
+        struct PermissionMissing: Error {}
+        let observer = RecordingObserver()
+        let environment = RdpSessionEnvironment(
+            credentialValidator: FixedCredentialValidator(userName: "kamil", password: "secret"),
+            makeSessionResources: { throw PermissionMissing() },
+            observer: observer
+        )
+        let server = RdpServer(configuration: RdpServerConfiguration(host: "127.0.0.1", port: 0, certificate: TestCertificate.shared), environment: environment)
+        let port = try await server.start()
+        defer { Task { await server.stop() } }
+        let session = try await RdpTestClient.connect(port: port).0.connectSession(userName: "kamil", password: "secret")
+        let bitmap = try await session.activate()
+        #expect(bitmap.desktopWidth == 800 && bitmap.desktopHeight == 600, "falls back to the client size")
+        #expect(!(try await session.nextFastPathUpdates()).isEmpty)
+        #expect(observer.startedSessions.isEmpty)
+        #expect(observer.failureReasons.contains { $0.contains("cannot share the screen") })
         await session.close()
     }
 

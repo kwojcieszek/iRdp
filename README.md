@@ -38,9 +38,13 @@ It has two parts:
   minutes.
 - A new session replaces the previous one.
 
+- When the client does not send a valid user name and password (for example
+  `mstsc` without saved credentials), iRdp shows its own logon screen inside
+  the session. Problems such as a missing Screen Recording permission are also
+  shown on the screen instead of closing the connection.
+
 Not included by design: clipboard, audio, drives and printers. NLA (CredSSP)
-is not supported yet: the server selects TLS, and the client must send the
-user name and password in the Client Info PDU.
+is not supported yet: the server selects TLS.
 
 ## Requirements
 

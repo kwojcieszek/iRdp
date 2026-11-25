@@ -24,7 +24,7 @@ public actor ServiceRuntime {
     /// Runs until `stop()` is called.
     public func run(pollInterval: Duration = .seconds(2)) async {
         Self.logger.info("iRdpService starting")
-        if !PermissionChecker.isScreenRecordingGranted { PermissionChecker.requestScreenRecording() }
+        await PermissionChecker.triggerScreenRecordingPrompt()
         if !PermissionChecker.isAccessibilityGranted { PermissionChecker.requestAccessibility() }
         while !isStopping {
             await applySettingsIfNeeded()
