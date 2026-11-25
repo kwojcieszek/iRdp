@@ -21,6 +21,7 @@ struct LogonFormTests {
         #expect(form.focusedField == .password)
         #expect(form.handle(.tab) == .changed)
         #expect(form.focusedField == .userName)
+        #expect(form.userName.isEmpty, "changing the user starts with an empty name")
     }
 
     @Test func rejectionClearsPassword() {

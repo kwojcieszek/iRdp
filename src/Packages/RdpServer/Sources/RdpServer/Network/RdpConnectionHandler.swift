@@ -34,6 +34,7 @@ final class RdpConnectionHandler: ChannelInboundHandler {
     private var pump: FrameUpdatePump?
     private var isRegistered = false
     private var logonForm: LogonForm?
+    private var logonRenderer: LogonScreenRenderer?
     private var drdynvcChannelId: UInt16?
     private var graphicsChannel = GraphicsChannelController()
     private var virtualChannelChunkLength = StaticChannelPdu.defaultChunkLength
@@ -210,7 +211,8 @@ final class RdpConnectionHandler: ChannelInboundHandler {
                 let userName = clientInfo?.userName ?? ""
                 let password = clientInfo?.password ?? ""
                 Self.logger.notice("credentials of \(userName, privacy: .public) from \(self.remoteAddress, privacy: .public) not accepted, showing logon screen")
-                logonForm = LogonForm(userName: userName, message: password.isEmpty ? nil : "The user name or password is incorrect.")
+                let suggested = environment.logonAppearance().defaultUserName ?? ""
+                logonForm = LogonForm(userName: userName.isEmpty ? suggested : userName, message: password.isEmpty ? nil : "The user name or password is incorrect.")
             }
         case .failure(let error):
             Self.logger.error("cannot share the screen with \(self.remoteAddress, privacy: .public): \(String(describing: error), privacy: .public)")
@@ -319,11 +321,13 @@ final class RdpConnectionHandler: ChannelInboundHandler {
 
     // MARK: - Logon screen
 
-    private var serverName: String { configuration.serverName }
-
     private func renderLogonScreen() {
         guard let logonForm, let pump else { return }
-        pump.submit(LogonScreenRenderer.render(logonForm, size: desktopSize, serverName: serverName))
+        if logonRenderer == nil || logonRenderer?.size != desktopSize {
+            logonRenderer = LogonScreenRenderer(size: desktopSize, appearance: environment.logonAppearance())
+        }
+        guard let logonRenderer else { return }
+        pump.submit(logonRenderer.render(logonForm))
     }
 
     private func handleLogonInput(_ event: RdpInputEvent) {
@@ -363,6 +367,7 @@ final class RdpConnectionHandler: ChannelInboundHandler {
         guard phase == .active, logonForm != nil else { return }
         if isValid {
             logonForm = nil
+            logonRenderer = nil
             clientInfo?.userName = userName
             startDesktop()
             return

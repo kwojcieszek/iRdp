@@ -49,6 +49,7 @@ public struct LogonForm: Sendable, Equatable {
             return .changed
         case .tab:
             focusedField = focusedField == .userName ? .password : .userName
+            if focusedField == .userName { userName = "" }
             return .changed
         case .escape:
             password = ""
