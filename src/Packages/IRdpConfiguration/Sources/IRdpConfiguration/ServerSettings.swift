@@ -12,8 +12,10 @@ public struct ServerSettings: Codable, Equatable, Sendable {
     /// With `macOSAccount`, only the user who owns the shared desktop may log in.
     public var restrictToCurrentUser: Bool
     public var sharedResources: SharedResources
+    /// Ignore passwords saved in RDP clients and always ask on the iRdp logon screen.
+    public var alwaysShowLogonScreen: Bool
 
-    public init(port: Int = defaultPort, listenAddress: String = "0.0.0.0", loginMode: LoginMode = .macOSAccount, applicationUserName: String = "irdp", applicationPasswordHash: PasswordHash? = nil, restrictToCurrentUser: Bool = true, sharedResources: SharedResources = SharedResources()) {
+    public init(port: Int = defaultPort, listenAddress: String = "0.0.0.0", loginMode: LoginMode = .macOSAccount, applicationUserName: String = "irdp", applicationPasswordHash: PasswordHash? = nil, restrictToCurrentUser: Bool = true, sharedResources: SharedResources = SharedResources(), alwaysShowLogonScreen: Bool = true) {
         self.port = port
         self.listenAddress = listenAddress
         self.loginMode = loginMode
@@ -21,6 +23,7 @@ public struct ServerSettings: Codable, Equatable, Sendable {
         self.applicationPasswordHash = applicationPasswordHash
         self.restrictToCurrentUser = restrictToCurrentUser
         self.sharedResources = sharedResources
+        self.alwaysShowLogonScreen = alwaysShowLogonScreen
     }
 
     public init(from decoder: any Decoder) throws {
@@ -33,6 +36,7 @@ public struct ServerSettings: Codable, Equatable, Sendable {
         applicationPasswordHash = try container.decodeIfPresent(PasswordHash.self, forKey: .applicationPasswordHash)
         restrictToCurrentUser = try container.decodeIfPresent(Bool.self, forKey: .restrictToCurrentUser) ?? defaults.restrictToCurrentUser
         sharedResources = try container.decodeIfPresent(SharedResources.self, forKey: .sharedResources) ?? defaults.sharedResources
+        alwaysShowLogonScreen = try container.decodeIfPresent(Bool.self, forKey: .alwaysShowLogonScreen) ?? defaults.alwaysShowLogonScreen
     }
 
     /// Problems that prevent the service from accepting clients with these settings.

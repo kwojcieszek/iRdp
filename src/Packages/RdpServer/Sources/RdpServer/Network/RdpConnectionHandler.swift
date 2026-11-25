@@ -179,11 +179,13 @@ final class RdpConnectionHandler: ChannelInboundHandler {
         let eventLoop = context.eventLoop
         let throttle = throttle
         let address = remoteAddress
+        // With "always show the logon screen", credentials saved in the client are not used at all.
+        let usesClientCredentials = !configuration.alwaysShowsLogonScreen
         Task {
             let isLockedOut = throttle.isLockedOut(address)
-            let isValid = isLockedOut ? false : await environment.credentialValidator.validate(credentials)
+            let isValid = isLockedOut || !usesClientCredentials ? false : await environment.credentialValidator.validate(credentials)
             // An empty password means the client wants the logon screen; it is not a failed attempt.
-            if !isLockedOut, isValid || !credentials.password.isEmpty {
+            if !isLockedOut, usesClientCredentials, isValid || !credentials.password.isEmpty {
                 if isValid { throttle.recordSuccess(address) } else { throttle.recordFailure(address) }
             }
             let result: Result<RdpSessionResources, any Error>
@@ -210,6 +212,9 @@ final class RdpConnectionHandler: ChannelInboundHandler {
             return
         }
         isAuthenticated = isValid
+        if isValid {
+            Self.logger.notice("\(self.clientInfo?.userName ?? "", privacy: .public) from \(self.remoteAddress, privacy: .public) signed in with credentials sent by the client")
+        }
         switch result {
         case .success(let resources):
             self.resources = resources
@@ -219,7 +224,8 @@ final class RdpConnectionHandler: ChannelInboundHandler {
                 let password = clientInfo?.password ?? ""
                 Self.logger.notice("credentials of \(userName, privacy: .public) from \(self.remoteAddress, privacy: .public) not accepted, showing logon screen")
                 let suggested = environment.logonAppearance().defaultUserName ?? ""
-                logonForm = LogonForm(userName: userName.isEmpty ? suggested : userName, message: password.isEmpty ? nil : "The user name or password is incorrect.")
+                let showsError = !password.isEmpty && !configuration.alwaysShowsLogonScreen
+                logonForm = LogonForm(userName: userName.isEmpty ? suggested : userName, message: showsError ? "The user name or password is incorrect." : nil)
             }
         case .failure(let error):
             Self.logger.error("cannot share the screen with \(self.remoteAddress, privacy: .public): \(String(describing: error), privacy: .public)")

@@ -17,6 +17,14 @@ struct LoginSettingsView: View {
                 }
                 .pickerStyle(.radioGroup)
             }
+            if model.settings.loginMode != .none {
+                Section {
+                    Toggle("Always ask for the password on the iRdp logon screen", isOn: $model.settings.alwaysShowLogonScreen)
+                    Text("When on, passwords saved in RDP clients such as Windows App are ignored and everyone signs in on the logon screen.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
             switch model.settings.loginMode {
             case .none:
                 Section {
@@ -49,7 +57,7 @@ struct LoginSettingsView: View {
                 }
             }
             Section {
-                Text("Connections are encrypted with TLS. The RDP client must send the user name and password when connecting (save them in the client's PC or user account settings).")
+                Text("Connections are encrypted with TLS. Users sign in on the iRdp logon screen, or with credentials saved in the RDP client when the option above is off.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

@@ -14,10 +14,12 @@ public struct RdpServerConfiguration: Sendable {
     public var usesGraphicsPipeline: Bool
     /// Encode with hardware H.264 (AVC420) on the graphics pipeline when the client supports it.
     public var usesVideoEncoding: Bool
+    /// Ignore credentials sent by the client (e.g. saved in Windows App) and always ask on the logon screen.
+    public var alwaysShowsLogonScreen: Bool
     /// Initial streaming quality; change it later with `RdpServer.updateQuality(_:)`.
     public var quality: StreamingQuality
 
-    public init(host: String = "0.0.0.0", port: Int = 3389, certificate: TlsCertificate, maximumSessions: Int = 1, serverVersion: UInt32 = RdpVersion.rdp10_0, serverName: String = ProcessInfo.processInfo.hostName, usesGraphicsPipeline: Bool = true, usesVideoEncoding: Bool = true, quality: StreamingQuality = StreamingQuality()) {
+    public init(host: String = "0.0.0.0", port: Int = 3389, certificate: TlsCertificate, maximumSessions: Int = 1, serverVersion: UInt32 = RdpVersion.rdp10_0, serverName: String = ProcessInfo.processInfo.hostName, usesGraphicsPipeline: Bool = true, usesVideoEncoding: Bool = true, quality: StreamingQuality = StreamingQuality(), alwaysShowsLogonScreen: Bool = false) {
         self.host = host
         self.port = port
         self.certificate = certificate
@@ -27,5 +29,6 @@ public struct RdpServerConfiguration: Sendable {
         self.usesGraphicsPipeline = usesGraphicsPipeline
         self.usesVideoEncoding = usesVideoEncoding
         self.quality = quality
+        self.alwaysShowsLogonScreen = alwaysShowsLogonScreen
     }
 }

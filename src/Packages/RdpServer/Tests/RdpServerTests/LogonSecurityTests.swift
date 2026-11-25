@@ -89,3 +89,42 @@ struct LogonSecurityTests {
         #expect(sink.releaseCount == 1, "held keys and buttons are released when the client disconnects")
     }
 }
+
+/// With "always show the logon screen" credentials saved in the client never open a session.
+@Suite(.serialized, .timeLimit(.minutes(1)))
+struct AlwaysShowLogonScreenTests {
+    @Test func savedClientCredentialsAreIgnored() async throws {
+        let sink = RecordingInputSink()
+        let observer = RecordingObserver()
+        let source = CountingFrameSource(TestPatternFrameSource(desktopSize: DesktopSize(width: 320, height: 192)))
+        let environment = RdpSessionEnvironment(
+            credentialValidator: FixedCredentialValidator(userName: "kamil", password: "secret"),
+            makeSessionResources: { RdpSessionResources(frameSource: source, inputSink: sink) },
+            observer: observer
+        )
+        let configuration = RdpServerConfiguration(host: "127.0.0.1", port: 0, certificate: TestCertificate.shared, alwaysShowsLogonScreen: true)
+        let server = RdpServer(configuration: configuration, environment: environment)
+        let port = try await server.start()
+        defer { Task { await server.stop() } }
+
+        // Correct saved credentials: still only the logon screen.
+        let session = try await RdpTestClient.connect(port: port).0.connectSession(userName: "kamil", password: "secret")
+        _ = try await session.activate()
+        try await session.send(FastPathInputPdu.encode([.mouse(flags: [.move], x: 3, y: 3)]))
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(observer.startedSessions.isEmpty)
+        #expect(source.startCount == 0)
+        #expect(sink.events.isEmpty)
+
+        // Typing the password on the logon screen signs in (the user name is prefilled).
+        var events: [RdpInputEvent] = []
+        for scancode: UInt8 in [0x1F, 0x12, 0x2E, 0x13, 0x12, 0x14, 0x1C] {
+            events += [.keyboard(scancode: scancode, isExtended: false, isRelease: false), .keyboard(scancode: scancode, isExtended: false, isRelease: true)]
+        }
+        try await session.send(FastPathInputPdu.encode(events))
+        for _ in 0..<100 where observer.startedSessions.isEmpty { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(observer.startedSessions.first?.userName == "kamil")
+        #expect(source.startCount == 1)
+        await session.close()
+    }
+}
