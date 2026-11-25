@@ -8,7 +8,7 @@ public final class CoreGraphicsInputInjector: InputSink, @unchecked Sendable {
     private let geometry: CaptureGeometry
     private let allowsKeyboard: Bool
     private let allowsMouse: Bool
-    private let queue = DispatchQueue(label: "com.kwojcieszek.irdp.input", qos: .userInteractive)
+    private let queue = DispatchQueue(label: "com.irdp.input", qos: .userInteractive)
     // State below is only accessed on `queue`.
     private var keyboard: KeyboardState
     private var mouse = MouseState()

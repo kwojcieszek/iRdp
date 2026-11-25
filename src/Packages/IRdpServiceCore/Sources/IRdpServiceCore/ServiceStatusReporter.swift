@@ -7,7 +7,7 @@ import Synchronization
 
 /// Collects the service state and publishes it to the status file.
 public final class ServiceStatusReporter: RdpServerObserver {
-    private static let logger = Logger(subsystem: "com.kwojcieszek.irdp", category: "status")
+    private static let logger = Logger(subsystem: "com.irdp", category: "status")
 
     private let store: StatusStore
     private let status: Mutex<ServiceStatus>

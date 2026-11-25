@@ -128,7 +128,7 @@ The service reads `~/Library/Application Support/iRdp/settings.json` and
 writes `status.json` next to it. To see its log:
 
 ```bash
-log stream --predicate 'subsystem == "com.kwojcieszek.irdp"' --info
+log stream --predicate 'subsystem == "com.irdp"' --info
 ```
 
 For diagnostics, running the service with `IRDP_TEST_PATTERN=1` shares an

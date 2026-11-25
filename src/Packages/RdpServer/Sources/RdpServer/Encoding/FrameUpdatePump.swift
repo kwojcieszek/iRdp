@@ -9,7 +9,7 @@ final class FrameUpdatePump: @unchecked Sendable {
     static let maximumFramesInFlight = 2
     static let refinementDelay: DispatchTimeInterval = .milliseconds(250)
 
-    private let queue = DispatchQueue(label: "com.kwojcieszek.irdp.frame-pump", qos: .userInteractive)
+    private let queue = DispatchQueue(label: "com.irdp.frame-pump", qos: .userInteractive)
     private let send: Sender
     // State below is only accessed on `queue`.
     private var encoder: any FrameEncoding

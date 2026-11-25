@@ -6,7 +6,7 @@ import RdpServer
 
 /// Runs the RDP server with the current settings and restarts it when the settings file changes.
 public actor ServiceRuntime {
-    private static let logger = Logger(subsystem: "com.kwojcieszek.irdp", category: "service")
+    private static let logger = Logger(subsystem: "com.irdp", category: "service")
 
     private let paths: ApplicationPaths
     private let settingsStore: SettingsStore

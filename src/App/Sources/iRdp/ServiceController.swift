@@ -4,7 +4,7 @@ import ServiceManagement
 /// Starts and stops iRdpService, as a LaunchAgent when the app is bundled, otherwise as a child process.
 @MainActor
 final class ServiceController {
-    static let launchAgentPlistName = "com.kwojcieszek.irdp.service.plist"
+    static let launchAgentPlistName = "com.irdp.service.plist"
 
     private var childProcess: Process?
 

@@ -17,12 +17,12 @@ public final class ScreenCaptureFrameSource: NSObject, FrameSource, SCStreamOutp
         }
     }
 
-    private static let logger = Logger(subsystem: "com.kwojcieszek.irdp", category: "capture")
+    private static let logger = Logger(subsystem: "com.irdp", category: "capture")
 
     public let desktopSize: DesktopSize
     private let displayID: UInt32
     private let framesPerSecond: Int
-    private let queue = DispatchQueue(label: "com.kwojcieszek.irdp.capture", qos: .userInteractive)
+    private let queue = DispatchQueue(label: "com.irdp.capture", qos: .userInteractive)
     private let lock = NSLock()
     // Guarded by `lock`.
     private var stream: SCStream?

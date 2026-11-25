@@ -3,12 +3,12 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.kwojcieszek.irdp.service</string>
+    <string>com.irdp.service</string>
     <key>BundleProgram</key>
     <string>Contents/MacOS/iRdpService</string>
     <key>AssociatedBundleIdentifiers</key>
     <array>
-        <string>com.kwojcieszek.irdp</string>
+        <string>com.irdp</string>
     </array>
     <key>RunAtLoad</key>
     <true/>

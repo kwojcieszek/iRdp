@@ -4,7 +4,7 @@ import RdpProtocol
 
 /// Encodes screen frames as RDPGFX frames (H.264/AVC420, or planar tiles when the client has no AVC support).
 final class GraphicsFrameEncoder: FrameEncoding {
-    private static let logger = Logger(subsystem: "com.kwojcieszek.irdp", category: "graphics")
+    private static let logger = Logger(subsystem: "com.irdp", category: "graphics")
     static let surfaceId: UInt16 = 0
 
     let desktopSize: DesktopSize

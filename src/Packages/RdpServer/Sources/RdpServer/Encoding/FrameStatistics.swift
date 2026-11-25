@@ -3,7 +3,7 @@ import os
 
 /// Collects per-frame timings of the update pipeline and logs a summary every few seconds.
 struct FrameStatistics {
-    private static let logger = Logger(subsystem: "com.kwojcieszek.irdp", category: "performance")
+    private static let logger = Logger(subsystem: "com.irdp", category: "performance")
     private static let timebase: mach_timebase_info_data_t = {
         var info = mach_timebase_info_data_t()
         mach_timebase_info(&info)

@@ -9,7 +9,7 @@ final class RdpConnectionHandler: ChannelInboundHandler {
     typealias InboundIn = RdpInboundFrame
     typealias OutboundOut = ByteBuffer
 
-    private static let logger = Logger(subsystem: "com.kwojcieszek.irdp", category: "connection")
+    private static let logger = Logger(subsystem: "com.irdp", category: "connection")
     static let shareId: UInt32 = 0x0001_03EA
 
     private let configuration: RdpServerConfiguration

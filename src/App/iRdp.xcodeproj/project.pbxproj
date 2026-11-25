@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0FEC145ACD28F4BCB3CB80F0 /* com.irdp.service.plist in CopyFiles */ = {isa = PBXBuildFile; fileRef = E746FD990B841FCD8E463BBC /* com.irdp.service.plist */; };
 		1A812DD406C2F5CA664802EE /* SignalSources.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F86D566DFFC76C31D063AF9 /* SignalSources.swift */; };
 		206FB043564364E8CF7C410D /* MenuBarContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EEA7D28540B487978C8E82F /* MenuBarContentView.swift */; };
 		2724C5058EE5F1106048DFB9 /* LoginSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADD3C11D3B73ADADE5D96383 /* LoginSettingsView.swift */; };
@@ -17,7 +18,6 @@
 		5D26AD7ADE0C75A53DAE1A18 /* ServiceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BA597EE3D82FB7604011C2F /* ServiceController.swift */; };
 		6072BAEAFBC92B474CA39900 /* PermissionsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D98F4E5577405C87F0CF7A76 /* PermissionsSettingsView.swift */; };
 		61A20978D1E6DA7AE6F05CF0 /* IRdpServiceCore in Frameworks */ = {isa = PBXBuildFile; productRef = 046EAE6B798C68027027F4C9 /* IRdpServiceCore */; };
-		67AED36A98E35E0F43BF3ACF /* com.kwojcieszek.irdp.service.plist in CopyFiles */ = {isa = PBXBuildFile; fileRef = 5C0BC35F88D4150A82061423 /* com.kwojcieszek.irdp.service.plist */; };
 		85AAB26C083800F0577B9AE1 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF63216E79CA5F8FB697E4AB /* AppModel.swift */; };
 		8A2D30322BBFCD4D959B023F /* IRdpApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EBBD21A47FC58F10205AB34 /* IRdpApp.swift */; };
 		AFEB2385B8391768F0E50198 /* IRdpConfiguration in Frameworks */ = {isa = PBXBuildFile; productRef = 87BA4973979D2544258A11DF /* IRdpConfiguration */; };
@@ -43,7 +43,7 @@
 			dstPath = Contents/Library/LaunchAgents;
 			dstSubfolderSpec = 1;
 			files = (
-				67AED36A98E35E0F43BF3ACF /* com.kwojcieszek.irdp.service.plist in CopyFiles */,
+				0FEC145ACD28F4BCB3CB80F0 /* com.irdp.service.plist in CopyFiles */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,7 +65,6 @@
 		0F86D566DFFC76C31D063AF9 /* SignalSources.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalSources.swift; sourceTree = "<group>"; };
 		1EBBD21A47FC58F10205AB34 /* IRdpApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IRdpApp.swift; sourceTree = "<group>"; };
 		2BA597EE3D82FB7604011C2F /* ServiceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceController.swift; sourceTree = "<group>"; };
-		5C0BC35F88D4150A82061423 /* com.kwojcieszek.irdp.service.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = com.kwojcieszek.irdp.service.plist; sourceTree = "<group>"; };
 		5F15DDD79723EE1B247FDD2B /* IRdpConfiguration */ = {isa = PBXFileReference; lastKnownFileType = folder; name = IRdpConfiguration; path = ../Packages/IRdpConfiguration; sourceTree = SOURCE_ROOT; };
 		5F6FBDE0609F4D11592D439A /* RdpProtocol */ = {isa = PBXFileReference; lastKnownFileType = folder; name = RdpProtocol; path = ../Packages/RdpProtocol; sourceTree = SOURCE_ROOT; };
 		62FA1C8335374AC84152E5DE /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -81,6 +80,7 @@
 		D98F4E5577405C87F0CF7A76 /* PermissionsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsSettingsView.swift; sourceTree = "<group>"; };
 		DC647BFFBC4FBB47A5DFCE4E /* SharedResourcesSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedResourcesSettingsView.swift; sourceTree = "<group>"; };
 		E6DC2ECAC1C257BD2DAA467E /* IRdpServiceCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = IRdpServiceCore; path = ../Packages/IRdpServiceCore; sourceTree = SOURCE_ROOT; };
+		E746FD990B841FCD8E463BBC /* com.irdp.service.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = com.irdp.service.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -119,7 +119,7 @@
 		4C30BA4E0E4A2DD04D2CEC85 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
-				5C0BC35F88D4150A82061423 /* com.kwojcieszek.irdp.service.plist */,
+				E746FD990B841FCD8E463BBC /* com.irdp.service.plist */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -318,7 +318,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.kwojcieszek.irdp;
+				PRODUCT_BUNDLE_IDENTIFIER = com.irdp;
 				PRODUCT_NAME = iRdp;
 				SDKROOT = macosx;
 			};
@@ -394,11 +394,13 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				COMBINE_HIDPI_IMAGES = YES;
+				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
+				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.kwojcieszek.irdp.service;
+				PRODUCT_BUNDLE_IDENTIFIER = com.irdp.service;
 				PRODUCT_NAME = iRdpService;
 				SDKROOT = macosx;
 				SKIP_INSTALL = YES;
@@ -475,7 +477,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.kwojcieszek.irdp;
+				PRODUCT_BUNDLE_IDENTIFIER = com.irdp;
 				PRODUCT_NAME = iRdp;
 				SDKROOT = macosx;
 			};
@@ -485,11 +487,13 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				COMBINE_HIDPI_IMAGES = YES;
+				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
+				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.kwojcieszek.irdp.service;
+				PRODUCT_BUNDLE_IDENTIFIER = com.irdp.service;
 				PRODUCT_NAME = iRdpService;
 				SDKROOT = macosx;
 				SKIP_INSTALL = YES;
