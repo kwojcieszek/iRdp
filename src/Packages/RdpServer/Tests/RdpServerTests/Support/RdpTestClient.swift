@@ -9,12 +9,14 @@ final class RdpTestClient: Sendable {
     private let inbox: FrameInbox
     private let group: MultiThreadedEventLoopGroup
     let userId: UInt16
+    let staticChannelIds: [String: UInt16]
 
-    private init(channel: any Channel, inbox: FrameInbox, group: MultiThreadedEventLoopGroup, userId: UInt16) {
+    private init(channel: any Channel, inbox: FrameInbox, group: MultiThreadedEventLoopGroup, userId: UInt16, staticChannelIds: [String: UInt16] = [:]) {
         self.channel = channel
         self.inbox = inbox
         self.group = group
         self.userId = userId
+        self.staticChannelIds = staticChannelIds
     }
 
     /// Connects and runs the protocol until the server answers the X.224 connection request.
@@ -36,7 +38,7 @@ final class RdpTestClient: Sendable {
     }
 
     /// Performs TLS and the MCS connection sequence, then sends the client info PDU.
-    func connectSession(userName: String, password: String, width: UInt16 = 800, height: UInt16 = 600) async throws -> RdpTestClient {
+    func connectSession(userName: String, password: String, width: UInt16 = 800, height: UInt16 = 600, supportsGraphicsPipeline: Bool = false) async throws -> RdpTestClient {
         var tls = TLSConfiguration.makeClientConfiguration()
         tls.certificateVerification = .none
         let sslContext = try NIOSSLContext(configuration: tls)
@@ -45,8 +47,8 @@ final class RdpTestClient: Sendable {
         }.get()
 
         let clientData = ClientConnectionData(
-            core: ClientCoreData(desktopWidth: width, desktopHeight: height, clientName: "TESTCLIENT", earlyCapabilityFlags: ClientCoreData.wants32BitsPerPixelSession),
-            network: ClientNetworkData(channels: [ChannelDefinition(name: "cliprdr")])
+            core: ClientCoreData(desktopWidth: width, desktopHeight: height, clientName: "TESTCLIENT", earlyCapabilityFlags: ClientCoreData.wants32BitsPerPixelSession | (supportsGraphicsPipeline ? ClientCoreData.supportsGraphicsPipeline : 0)),
+            network: ClientNetworkData(channels: [ChannelDefinition(name: "cliprdr")] + (supportsGraphicsPipeline ? [ChannelDefinition(name: "drdynvc")] : []))
         )
         try await send(X224DataTpdu.packet(McsConnectInitial(userData: GccConferenceCreateRequest.encode(clientData: clientData.encodeBlocks())).encode()))
         let response = try McsConnectResponse.parse(X224DataTpdu.payload(of: TpktPacket.unwrap(try await nextFrame())))
@@ -55,7 +57,8 @@ final class RdpTestClient: Sendable {
         try await send(X224DataTpdu.packet(McsDomainPdu.erectDomainRequest.encode()))
         try await send(X224DataTpdu.packet(McsDomainPdu.attachUserRequest.encode()))
         guard case .attachUserConfirm(0, let userId) = try await nextDomainPdu() else { throw RdpTestClientError.unexpected("attach user confirm") }
-        let session = RdpTestClient(channel: channel, inbox: inbox, group: group, userId: userId)
+        let names = clientData.network.channels.map(\.name)
+        let session = RdpTestClient(channel: channel, inbox: inbox, group: group, userId: userId, staticChannelIds: Dictionary(uniqueKeysWithValues: zip(names, serverData.staticChannelIds)))
         for channelId in [userId, serverData.ioChannelId] + serverData.staticChannelIds {
             try await send(X224DataTpdu.packet(McsDomainPdu.channelJoinRequest(userId: userId, channelId: channelId).encode()))
             guard case .channelJoinConfirm(0, _, _, channelId) = try await nextDomainPdu() else { throw RdpTestClientError.unexpected("join \(channelId)") }
@@ -93,6 +96,63 @@ final class RdpTestClient: Sendable {
             receivedFontMap = try SharePdu.parseAll(try await nextIoData()).contains { $0.dataType == .fontMap }
         }
         return bitmap
+    }
+
+    // MARK: - Graphics pipeline
+
+    /// Answers the DVC handshake, advertises graphics capabilities and returns the server's setup commands.
+    func openGraphicsPipeline(capabilities: [GraphicsCapabilitySet]) async throws -> [UInt16] {
+        guard case .capabilities = try await nextDynamicChannelPdu() else { throw RdpTestClientError.unexpected("DVC capabilities") }
+        try await sendDynamicChannelPdu(.capabilities(version: 1))
+        guard case .createRequest(let id, let name) = try await nextDynamicChannelPdu(), name == "Microsoft::Windows::RDS::Graphics" else { throw RdpTestClientError.unexpected("create request") }
+        try await sendDynamicChannelPdu(.createResponse(channelId: id, status: 0))
+        try await sendDynamicChannelPdu(.data(channelId: id, data: GraphicsClientPdu.capsAdvertise(capabilities).encode()))
+        return try Self.commands(in: try await nextGraphicsMessage())
+    }
+
+    func sendFrameAcknowledge(frameId: UInt32) async throws {
+        try await sendDynamicChannelPdu(.data(channelId: 1, data: GraphicsClientPdu.frameAcknowledge(queueDepth: 0, frameId: frameId, totalFramesDecoded: frameId).encode()))
+    }
+
+    private var dynamicChannelId: UInt16 { staticChannelIds["drdynvc"] ?? 0 }
+
+    func sendDynamicChannelPdu(_ pdu: DynamicChannelPdu) async throws {
+        for chunk in StaticChannelPdu.chunks(for: pdu.encode()) {
+            try await send(X224DataTpdu.packet(McsDomainPdu.sendDataRequest(userId: userId, channelId: dynamicChannelId, data: chunk).encode()))
+        }
+    }
+
+    func nextDynamicChannelPdu() async throws -> DynamicChannelPdu {
+        var reassembler = StaticChannelReassembler()
+        while true {
+            let frame = try await nextFrame()
+            guard frame.first == TpktPacket.version,
+                  case .sendDataIndication(_, let channelId, let data) = try McsDomainPdu.parse(X224DataTpdu.payload(of: TpktPacket.unwrap(frame))),
+                  channelId == dynamicChannelId,
+                  let message = try reassembler.append(data) else { continue }
+            return try DynamicChannelPdu.parse(message)
+        }
+    }
+
+    /// Next complete RDPGFX message (unwrapped from segmented data).
+    func nextGraphicsMessage() async throws -> [UInt8] {
+        var reassembler = DynamicChannelReassembler()
+        while true {
+            if let (_, message) = reassembler.append(try await nextDynamicChannelPdu()) {
+                return try SegmentedData.unwrap(message)
+            }
+        }
+    }
+
+    static func commands(in message: [UInt8]) throws -> [UInt16] {
+        var reader = ByteReader(message)
+        var result: [UInt16] = []
+        while reader.remaining >= 8 {
+            result.append(try reader.readUInt16LE())
+            _ = try reader.readUInt16LE()
+            try reader.skip(Int(try reader.readUInt32LE()) - 8)
+        }
+        return result
     }
 
     // MARK: - Low level helpers

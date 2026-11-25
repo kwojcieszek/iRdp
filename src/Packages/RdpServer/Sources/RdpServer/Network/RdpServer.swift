@@ -46,6 +46,8 @@ public final class RdpServer: Sendable {
             .serverChannelOption(ChannelOptions.backlog, value: 16)
             .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             .childChannelOption(ChannelOptions.socketOption(.tcp_nodelay), value: 1)
+            // A small kernel send buffer keeps stale frames from piling up behind slow links.
+            .childChannelOption(ChannelOptions.socketOption(.so_sndbuf), value: 512 * 1024)
             .childChannelOption(ChannelOptions.writeBufferWaterMark, value: .init(low: 256 * 1024, high: 1024 * 1024))
             .childChannelInitializer { channel in
                 channel.eventLoop.makeCompletedFuture {

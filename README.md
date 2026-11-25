@@ -15,8 +15,15 @@ It has two parts:
 
 - RDP 10 server: X.224 negotiation, TLS security layer, MCS/GCC, licensing,
   capability exchange, fast-path input and output.
-- Screen updates: only the 64×64 tiles that changed are sent. At 32 bpp they
-  are compressed with the RDP 6.0 planar codec; 24 and 16 bpp are sent raw.
+- Screen updates with the RDP graphics pipeline (RDPGFX over the dynamic
+  virtual channel) and hardware H.264 (AVC420, VideoToolbox, low-latency rate
+  control) for clients that support it, such as Windows App and mstsc. Client
+  frame acknowledgements limit the frames in flight to two, so a slow network
+  never builds up a queue of stale frames. Clients without H.264 get planar
+  tiles on the graphics pipeline; clients without the pipeline get bitmap
+  updates (64×64 changed tiles, planar at 32 bpp).
+- Pipeline statistics (fps, encode time, data rate) are logged every 3 s in
+  the `performance` log category.
 - Keyboard (scancodes and Unicode), mouse buttons, wheel, horizontal wheel,
   extra buttons and double clicks.
 - Login types:

@@ -4,15 +4,15 @@ public enum PlanarBitmapEncoder {
     public static let formatHeader: UInt8 = 0x30
 
     /// Encodes BGRX pixels (rows top to bottom, `width` pixels each, tightly packed) into a planar stream.
-    /// Scanlines are stored bottom-up as in all bitmap updates.
-    public static func encode(bgrx pixels: [UInt8], width: Int, height: Int) -> [UInt8] {
+    /// Scanlines are stored bottom-up as in bitmap updates, or top-down for the graphics pipeline.
+    public static func encode(bgrx pixels: [UInt8], width: Int, height: Int, topDown: Bool = false) -> [UInt8] {
         precondition(pixels.count >= width * height * 4, "pixel buffer too small")
         var output: [UInt8] = [formatHeader]
         output.reserveCapacity(width * height + 1)
         for channel in [2, 1, 0] {
             var plane = [UInt8](repeating: 0, count: width * height)
             for row in 0..<height {
-                let sourceRow = height - 1 - row
+                let sourceRow = topDown ? row : height - 1 - row
                 for column in 0..<width {
                     plane[row * width + column] = pixels[(sourceRow * width + column) * 4 + channel]
                 }

@@ -2,6 +2,8 @@
 public struct ClientCoreData: Sendable, Equatable {
     public static let supports32BitsPerPixel: UInt16 = 0x0008
     public static let wants32BitsPerPixelSession: UInt16 = 0x0002
+    /// RNS_UD_CS_SUPPORT_DYNVC_GFX_PROTOCOL: the client supports the graphics pipeline.
+    public static let supportsGraphicsPipeline: UInt16 = 0x0100
 
     public var version: UInt32
     public var desktopWidth: UInt16

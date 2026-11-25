@@ -2,7 +2,7 @@ import Foundation
 import RdpProtocol
 
 /// Turns screen frames into fast-path bitmap update PDUs, sending only tiles that changed since the previous frame.
-public final class ScreenUpdateEncoder {
+public final class ScreenUpdateEncoder: FrameEncoding {
     public static let tileSize = 64
 
     public let bitsPerPixel: Int
@@ -11,6 +11,8 @@ public final class ScreenUpdateEncoder {
     /// Whether compressed data must start with TS_CD_HEADER (clients without NO_BITMAP_COMPRESSION_HDR support).
     public let includesCompressionHeader: Bool
     public private(set) var lastFrame: ScreenFrame?
+    var usesFrameAcknowledgements: Bool { false }
+    var refinementFrameCount: Int { 0 }
 
     public init(bitsPerPixel: Int, usesPlanarCompression: Bool = true, includesCompressionHeader: Bool = false) {
         self.bitsPerPixel = [16, 24, 32].contains(bitsPerPixel) ? bitsPerPixel : 32

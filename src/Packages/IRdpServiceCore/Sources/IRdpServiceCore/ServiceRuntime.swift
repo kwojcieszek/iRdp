@@ -66,7 +66,7 @@ public actor ServiceRuntime {
         do {
             let certificate = try TlsCertificateStore(directory: paths.certificateDirectory).loadOrCreate(commonName: Host.current().localizedName ?? "iRdp")
             let fingerprint = try? SelfSignedCertificateGenerator.fingerprint(ofCertificatePEM: certificate.certificatePEM)
-            let configuration = RdpServerConfiguration(host: settings.listenAddress, port: settings.port, certificate: certificate, preferredBitsPerPixel: settings.sharedResources.colorDepth.rawValue)
+            let configuration = RdpServerConfiguration(host: settings.listenAddress, port: settings.port, certificate: certificate, preferredBitsPerPixel: settings.sharedResources.colorDepth.rawValue, usesVideoEncoding: settings.sharedResources.usesVideoEncoding, videoBitRate: max(settings.sharedResources.videoBitRateMegabits, 1) * 1_000_000, framesPerSecond: settings.sharedResources.framesPerSecond)
             let factory = MacSessionResourcesFactory(resources: settings.sharedResources)
             let environment = RdpSessionEnvironment(
                 credentialValidator: SettingsCredentialValidator(settings: settings, accountVerifier: OpenDirectoryCredentialValidator()),

@@ -26,7 +26,7 @@ struct RdpServerEndToEndTests {
         defer { Task { await server.stop() } }
 
         let (client, confirm) = try await RdpTestClient.connect(port: port)
-        #expect(confirm.outcome == .selected(.tls, flags: X224ConnectionConfirm.extendedClientDataSupported))
+        #expect(confirm.outcome == .selected(.tls, flags: X224ConnectionConfirm.extendedClientDataSupported | X224ConnectionConfirm.dynamicVirtualChannelGraphicsSupported))
         let session = try await client.connectSession(userName: "kamil", password: "secret")
         let bitmap = try await session.activate()
         #expect(bitmap.desktopWidth == 320 && bitmap.desktopHeight == 192)

@@ -74,8 +74,9 @@ public final class ScreenCaptureFrameSource: NSObject, FrameSource, SCStreamOutp
               let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
               let rawStatus = attachments.first?[.status] as? Int,
               SCFrameStatus(rawValue: rawStatus) == .complete,
-              let pixelBuffer = sampleBuffer.imageBuffer,
-              let frame = Self.makeFrame(from: pixelBuffer) else { return }
+              let pixelBuffer = sampleBuffer.imageBuffer else { return }
+        let displayTime = (attachments.first?[.displayTime] as? UInt64) ?? mach_absolute_time()
+        guard let frame = Self.makeFrame(from: pixelBuffer, displayTime: displayTime) else { return }
         let handler = lock.withLock { onFrame }
         handler?(frame)
     }
@@ -84,7 +85,7 @@ public final class ScreenCaptureFrameSource: NSObject, FrameSource, SCStreamOutp
         Self.logger.error("capture stopped: \(error.localizedDescription, privacy: .public)")
     }
 
-    static func makeFrame(from pixelBuffer: CVPixelBuffer) -> ScreenFrame? {
+    static func makeFrame(from pixelBuffer: CVPixelBuffer, displayTime: UInt64) -> ScreenFrame? {
         CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
         guard let base = CVPixelBufferGetBaseAddress(pixelBuffer) else { return nil }
@@ -99,6 +100,6 @@ public final class ScreenCaptureFrameSource: NSObject, FrameSource, SCStreamOutp
             }
             count = rowLength * height
         }
-        return ScreenFrame(width: width, height: height, bytesPerRow: rowLength, pixels: pixels)
+        return ScreenFrame(width: width, height: height, bytesPerRow: rowLength, pixels: pixels, displayTime: displayTime)
     }
 }

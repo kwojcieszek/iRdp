@@ -25,7 +25,7 @@ struct RdpServerNetworkTests {
 
     private func activate(host: String, port: Int) async throws {
         let (client, confirm) = try await RdpTestClient.connect(host: host, port: port)
-        #expect(confirm.outcome == .selected(.tls, flags: X224ConnectionConfirm.extendedClientDataSupported))
+        #expect(confirm.outcome == .selected(.tls, flags: X224ConnectionConfirm.extendedClientDataSupported | X224ConnectionConfirm.dynamicVirtualChannelGraphicsSupported))
         let session = try await client.connectSession(userName: "kamil", password: "secret")
         let bitmap = try await session.activate()
         #expect(bitmap.desktopWidth == 128)

@@ -34,6 +34,9 @@ final class RdpConnectionHandler: ChannelInboundHandler {
     private var pump: FrameUpdatePump?
     private var isRegistered = false
     private var logonForm: LogonForm?
+    private var drdynvcChannelId: UInt16?
+    private var graphicsChannel = GraphicsChannelController()
+    private var virtualChannelChunkLength = StaticChannelPdu.defaultChunkLength
     private var keyTranslator = KeyboardTextTranslator(keyboardLayout: 0)
 
     init(configuration: RdpServerConfiguration, environment: RdpSessionEnvironment, sslContext: NIOSSLContext, registry: RdpSessionRegistry, throttle: AuthenticationThrottle) {
@@ -98,7 +101,9 @@ final class RdpConnectionHandler: ChannelInboundHandler {
             fail("client does not support TLS")
             return
         }
-        send(TpktPacket.wrap(X224ConnectionConfirm(outcome: .selected(.tls, flags: X224ConnectionConfirm.extendedClientDataSupported)).encode()))
+        var flags = X224ConnectionConfirm.extendedClientDataSupported
+        if configuration.usesGraphicsPipeline { flags |= X224ConnectionConfirm.dynamicVirtualChannelGraphicsSupported }
+        send(TpktPacket.wrap(X224ConnectionConfirm(outcome: .selected(.tls, flags: flags)).encode()))
         guard let context else { return }
         try context.pipeline.syncOperations.addHandler(NIOSSLServerHandler(context: sslContext), position: .first)
         phase = .awaitingConnectInitial
@@ -108,6 +113,9 @@ final class RdpConnectionHandler: ChannelInboundHandler {
         let data = try ClientConnectionData.parse(GccConferenceCreateRequest.parse(initial.userData))
         clientData = data
         staticChannelIds = data.network.channels.indices.map { McsChannel.firstStaticChannelId + UInt16($0) }
+        if let index = data.network.channels.firstIndex(where: { $0.name.lowercased() == GraphicsChannelController.staticChannelName }) {
+            drdynvcChannelId = staticChannelIds[index]
+        }
         userId = max(1007, McsChannel.firstStaticChannelId + UInt16(staticChannelIds.count))
         let serverData = ServerConnectionData(version: configuration.serverVersion, clientRequestedProtocols: requestedProtocols, staticChannelIds: staticChannelIds)
         let response = McsConnectResponse(userData: GccConferenceCreateResponse.encode(serverData: serverData.encodeBlocks()))
@@ -126,8 +134,11 @@ final class RdpConnectionHandler: ChannelInboundHandler {
             sendMcs(.channelJoinConfirm(result: 0, userId: userId, requestedChannelId: channelId, channelId: channelId))
             if phase == .channelConnection { phase = .awaitingClientInfo }
         case .sendDataRequest(_, let channelId, let data):
-            guard channelId == McsChannel.ioChannelId else { return }
-            try handleIoChannelData(data)
+            if channelId == McsChannel.ioChannelId {
+                try handleIoChannelData(data)
+            } else if channelId == drdynvcChannelId, phase == .active {
+                try handleGraphicsChannelEvents(graphicsChannel.receive(chunk: data))
+            }
         case .disconnectProviderUltimatum:
             close()
         default:
@@ -248,6 +259,11 @@ final class RdpConnectionHandler: ChannelInboundHandler {
         if let bitmap = confirm.capability(CapabilitySetType.bitmap).flatMap({ try? BitmapCapability.parse($0.body) }),
            [16, 24, 32].contains(Int(bitmap.preferredBitsPerPixel)) {
             bitsPerPixel = Int(bitmap.preferredBitsPerPixel)
+        }
+        if let channelCapability = confirm.capability(CapabilitySetType.virtualChannel), channelCapability.body.count >= 8 {
+            var reader = ByteReader(channelCapability.body)
+            _ = try? reader.readUInt32LE()
+            if let size = try? reader.readUInt32LE(), size >= 1600 { virtualChannelChunkLength = Int(size) }
         }
         if let general = confirm.capability(CapabilitySetType.general).flatMap({ try? GeneralCapability.parse($0.body) }) {
             clientSupportsCompressionWithoutHeader = general.extraFlags & GeneralCapability.noBitmapCompressionHeader != 0
@@ -377,21 +393,13 @@ final class RdpConnectionHandler: ChannelInboundHandler {
         let channel = context.channel
         let pump = FrameUpdatePump(encoder: ScreenUpdateEncoder(bitsPerPixel: bitsPerPixel, includesCompressionHeader: !clientSupportsCompressionWithoutHeader)) { pdus, completion in
             channel.eventLoop.execute {
-                var lastWrite: EventLoopFuture<Void>?
-                for pdu in pdus {
-                    var buffer = channel.allocator.buffer(capacity: pdu.count)
-                    buffer.writeBytes(pdu)
-                    lastWrite = channel.write(buffer)
-                }
-                channel.flush()
-                if let lastWrite {
-                    lastWrite.whenComplete { _ in completion() }
-                } else {
-                    completion()
-                }
+                var buffer = channel.allocator.buffer(capacity: pdus.reduce(0) { $0 + $1.count })
+                for pdu in pdus { buffer.writeBytes(pdu) }
+                channel.writeAndFlush(buffer).whenComplete { _ in completion() }
             }
         }
         self.pump = pump
+        startGraphicsPipelineIfSupported()
         if logonForm != nil {
             renderLogonScreen()
         } else {
@@ -419,6 +427,63 @@ final class RdpConnectionHandler: ChannelInboundHandler {
             } catch {
                 eventLoop.execute { bound.value.disconnect(errorInfo: SetErrorInfoPdu.serverDeniedConnection, reason: "screen capture failed: \(error)") }
             }
+        }
+    }
+
+    // MARK: - Graphics pipeline
+
+    private func startGraphicsPipelineIfSupported() {
+        let earlyFlags = clientData?.core.earlyCapabilityFlags ?? 0
+        guard configuration.usesGraphicsPipeline, drdynvcChannelId != nil, earlyFlags & ClientCoreData.supportsGraphicsPipeline != 0 else { return }
+        do {
+            try handleGraphicsChannelEvents(graphicsChannel.start())
+        } catch {
+            Self.logger.error("graphics channel: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    private func handleGraphicsChannelEvents(_ events: [GraphicsChannelEvent]) throws {
+        for event in events {
+            switch event {
+            case .sendDynamicChannelPdu(let pdu):
+                sendStaticChannelMessage(pdu)
+            case .clientCapabilities(let sets):
+                enableGraphicsPipeline(clientCapabilities: sets)
+            case .frameAcknowledged(let queueDepth):
+                pump?.frameAcknowledged(suspended: queueDepth == GraphicsClientPdu.suspendFrameAcknowledgement)
+            case .cacheImportOffer:
+                GraphicsChannelController.dynamicChannelPdus(forGraphicsMessage: GraphicsServerPdu.cacheImportReply()).forEach { sendStaticChannelMessage($0) }
+            case .closed:
+                Self.logger.notice("graphics channel closed by the client")
+            }
+        }
+    }
+
+    private func enableGraphicsPipeline(clientCapabilities sets: [GraphicsCapabilitySet]) {
+        guard let chosen = GraphicsCapabilitySet.choose(from: sets), let pump, let channelId = drdynvcChannelId else { return }
+        let codec: GraphicsPipelineCodec = configuration.usesVideoEncoding && chosen.supportsAvc420 ? .avc420 : .planar
+        let packetize = Self.graphicsPacketizer(userId: userId, channelId: channelId, chunkLength: virtualChannelChunkLength)
+        let encoder = GraphicsFrameEncoder(desktopSize: desktopSize, codec: codec, bitRate: configuration.videoBitRate, framesPerSecond: configuration.framesPerSecond, wrap: packetize)
+        for packet in packetize(encoder.setupMessage(confirming: chosen)) { send(packet) }
+        pump.replaceEncoder(encoder)
+        Self.logger.info("graphics pipeline 0x\(String(chosen.version, radix: 16), privacy: .public) with \(codec == .avc420 ? "H.264 (AVC420)" : "planar", privacy: .public)")
+    }
+
+    /// Turns an RDPGFX message into wire packets: segmented data, DVC PDUs, static channel chunks, MCS, X.224 and TPKT.
+    static func graphicsPacketizer(userId: UInt16, channelId: UInt16, chunkLength: Int) -> ([UInt8]) -> [[UInt8]] {
+        { message in
+            GraphicsChannelController.dynamicChannelPdus(forGraphicsMessage: message).flatMap { pdu in
+                StaticChannelPdu.chunks(for: pdu, chunkLength: chunkLength).map { chunk in
+                    X224DataTpdu.packet(McsDomainPdu.sendDataIndication(userId: userId, channelId: channelId, data: chunk).encode())
+                }
+            }
+        }
+    }
+
+    private func sendStaticChannelMessage(_ message: [UInt8]) {
+        guard let channelId = drdynvcChannelId else { return }
+        for chunk in StaticChannelPdu.chunks(for: message, chunkLength: virtualChannelChunkLength) {
+            sendMcs(.sendDataIndication(userId: userId, channelId: channelId, data: chunk))
         }
     }
 

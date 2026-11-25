@@ -22,6 +22,14 @@ struct SharedResourcesSettingsView: View {
                 }
                 Stepper("Frame rate: \(model.settings.sharedResources.framesPerSecond) fps", value: $model.settings.sharedResources.framesPerSecond, in: 1...60)
             }
+            Section("Video") {
+                Toggle("Hardware H.264 encoding (lowest latency)", isOn: $model.settings.sharedResources.usesVideoEncoding)
+                Stepper("Bit rate: \(model.settings.sharedResources.videoBitRateMegabits) Mbit/s", value: $model.settings.sharedResources.videoBitRateMegabits, in: 2...100, step: 2)
+                    .disabled(!model.settings.sharedResources.usesVideoEncoding)
+                Text("Used with clients that support the RDP graphics pipeline (Windows App, mstsc). Other clients get compressed bitmaps.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
             Section("Input") {
                 Toggle("Share keyboard", isOn: $model.settings.sharedResources.shareKeyboard)
                 Toggle("Share mouse", isOn: $model.settings.sharedResources.shareMouse)
