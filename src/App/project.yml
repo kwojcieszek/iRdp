@@ -37,8 +37,9 @@ targets:
         PRODUCT_NAME: iRdpService
         PRODUCT_BUNDLE_IDENTIFIER: com.irdp.service
         SKIP_INSTALL: YES
-        GENERATE_INFOPLIST_FILE: YES
-        CREATE_INFOPLIST_SECTION_IN_BINARY: YES
+        # No embedded Info.plist: macOS then attributes the service's privacy permissions to the
+        # enclosing iRdp app (com.irdp), so one grant in System Settings covers both.
+        OTHER_CODE_SIGN_FLAGS: "--identifier com.irdp.service"
   iRdp:
     type: application
     platform: macOS
