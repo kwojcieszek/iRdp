@@ -42,52 +42,50 @@ user name and password in the Client Info PDU.
 
 ## Repository layout
 
-All code is in `src` (a Swift package):
+Everything is in `src`, organized like a .NET solution:
 
-| Module | Purpose |
+| .NET | iRdp |
+| --- | --- |
+| `.sln` | `src/iRdp.xcworkspace` |
+| class library `.csproj` | a Swift package in `src/Packages/<Name>` with its own `Package.swift` |
+| executable `.csproj` | `src/App/iRdp.xcodeproj` (targets `iRdp` and `iRdpService`) |
+| test project | the package's `Tests/<Name>Tests` folder |
+
+| Package | Purpose |
 | --- | --- |
 | `RdpProtocol` | Encoding and decoding of RDP PDUs (TPKT, X.224, BER/PER, MCS, GCC, capabilities, share PDUs, fast-path, planar codec) |
 | `RdpServer` | SwiftNIO TLS server, connection state machine, tile encoder, certificate generation |
 | `IRdpConfiguration` | Settings, login types, shared resources, status files shared by the app and the service |
 | `MacIntegration` | ScreenCaptureKit capture, Quartz input injection, scancode map, Open Directory, displays, permissions |
 | `IRdpServiceCore` | Service runtime: applies settings, authenticates and reports status |
-| `iRdpService` | Service executable |
-| `iRdp` | SwiftUI menu bar app |
 
-Each type is in its own file. Tests are in `src/Tests`.
+Dependencies: `RdpServer` → `RdpProtocol`; `MacIntegration` → `RdpServer`,
+`IRdpConfiguration`; `IRdpServiceCore` → `MacIntegration`; the app target
+`iRdp` → `IRdpConfiguration`, `MacIntegration`; `iRdpService` →
+`IRdpServiceCore`. Each type is in its own file.
 
 ## Open in Xcode
 
 ```bash
-open src/iRdp.xcodeproj
+open src/iRdp.xcworkspace
 ```
 
-The `iRdp` scheme builds the menu bar app with iRdpService and the LaunchAgent
-embedded in the bundle, so Run starts the real app. The project is generated
-from `src/project.yml` with XcodeGen (`cd src && xcodegen generate`) and uses
-the Swift package for all modules. To run the unit tests in Xcode, open
-`src/Package.swift` instead and use Product → Test.
+The `iRdp` scheme builds and runs the menu bar app with iRdpService and the
+LaunchAgent embedded in the bundle. Product → Test (⌘U) runs the tests of all
+packages. Each package also has its own scheme. The app project is generated
+from `src/App/project.yml` with XcodeGen (`cd src/App && xcodegen generate`).
 
-## Build and test
+## Build and test from Terminal
 
 ```bash
-cd src
-swift build
-swift test
+src/Scripts/test-all.sh              # swift test in every package
+src/Scripts/build-app.sh             # creates src/.build/app/iRdp.app
+src/Scripts/build-app.sh --install   # also copies it to /Applications
 ```
 
 The tests include an end-to-end test that runs the server on a local port and
 drives it through TLS with a test RDP client: it checks the handshake, screen
 updates, input, a wrong password, a client without TLS and a session takeover.
-
-To build the signed app bundle (it uses the first Apple Development or
-Developer ID identity, or `CODESIGN_IDENTITY`):
-
-```bash
-cd src
-Scripts/build-app.sh            # creates src/.build/app/iRdp.app
-Scripts/build-app.sh --install  # also copies it to /Applications
-```
 
 ## First run
 

@@ -62,14 +62,17 @@
 
 /* Begin PBXFileReference section */
 		083FEF059397B910CF06A093 /* GeneralSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneralSettingsView.swift; sourceTree = "<group>"; };
-		09F058BC5342ABE621B076A3 /* src */ = {isa = PBXFileReference; lastKnownFileType = folder; name = src; path = .; sourceTree = SOURCE_ROOT; };
 		0F86D566DFFC76C31D063AF9 /* SignalSources.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalSources.swift; sourceTree = "<group>"; };
 		1EBBD21A47FC58F10205AB34 /* IRdpApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IRdpApp.swift; sourceTree = "<group>"; };
 		2BA597EE3D82FB7604011C2F /* ServiceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceController.swift; sourceTree = "<group>"; };
 		5C0BC35F88D4150A82061423 /* com.kwojcieszek.irdp.service.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = com.kwojcieszek.irdp.service.plist; sourceTree = "<group>"; };
+		5F15DDD79723EE1B247FDD2B /* IRdpConfiguration */ = {isa = PBXFileReference; lastKnownFileType = folder; name = IRdpConfiguration; path = ../Packages/IRdpConfiguration; sourceTree = SOURCE_ROOT; };
+		5F6FBDE0609F4D11592D439A /* RdpProtocol */ = {isa = PBXFileReference; lastKnownFileType = folder; name = RdpProtocol; path = ../Packages/RdpProtocol; sourceTree = SOURCE_ROOT; };
 		62FA1C8335374AC84152E5DE /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		64C1DB5C2929C95AA4F667B5 /* iRdpService */ = {isa = PBXFileReference; includeInIndex = 0; path = iRdpService; sourceTree = BUILT_PRODUCTS_DIR; };
+		78E403985F880C5328F6346E /* RdpServer */ = {isa = PBXFileReference; lastKnownFileType = folder; name = RdpServer; path = ../Packages/RdpServer; sourceTree = SOURCE_ROOT; };
 		7EEA7D28540B487978C8E82F /* MenuBarContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarContentView.swift; sourceTree = "<group>"; };
+		9B3D56537E8093322E42B5F7 /* MacIntegration */ = {isa = PBXFileReference; lastKnownFileType = folder; name = MacIntegration; path = ../Packages/MacIntegration; sourceTree = SOURCE_ROOT; };
 		ADD3C11D3B73ADADE5D96383 /* LoginSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginSettingsView.swift; sourceTree = "<group>"; };
 		C54FE0848C6AB7CD030DE4EB /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		CB7E2C0462AC02791BB60C48 /* iRdp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = iRdp.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -77,6 +80,7 @@
 		D1AA95A6F690C28D51D14199 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		D98F4E5577405C87F0CF7A76 /* PermissionsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsSettingsView.swift; sourceTree = "<group>"; };
 		DC647BFFBC4FBB47A5DFCE4E /* SharedResourcesSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedResourcesSettingsView.swift; sourceTree = "<group>"; };
+		E6DC2ECAC1C257BD2DAA467E /* IRdpServiceCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = IRdpServiceCore; path = ../Packages/IRdpServiceCore; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -103,7 +107,11 @@
 		257D81A830769BC2725A9030 /* Packages */ = {
 			isa = PBXGroup;
 			children = (
-				09F058BC5342ABE621B076A3 /* src */,
+				5F15DDD79723EE1B247FDD2B /* IRdpConfiguration */,
+				E6DC2ECAC1C257BD2DAA467E /* IRdpServiceCore */,
+				9B3D56537E8093322E42B5F7 /* MacIntegration */,
+				5F6FBDE0609F4D11592D439A /* RdpProtocol */,
+				78E403985F880C5328F6346E /* RdpServer */,
 			);
 			name = Packages;
 			sourceTree = "<group>";
@@ -244,7 +252,11 @@
 			mainGroup = 8C0AFCECB283D46364626606;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				CB63CE5C348A431C15016E84 /* XCLocalSwiftPackageReference "." */,
+				4BE54EB6BC13F11FE3837456 /* XCLocalSwiftPackageReference "../Packages/IRdpConfiguration" */,
+				D337F3E99CACD1FC1BF92175 /* XCLocalSwiftPackageReference "../Packages/IRdpServiceCore" */,
+				C85CE76945055F638BBAEB08 /* XCLocalSwiftPackageReference "../Packages/MacIntegration" */,
+				122DDF3689AAA3FEA00A4400 /* XCLocalSwiftPackageReference "../Packages/RdpProtocol" */,
+				78190E2E6B10D2F593EF3A05 /* XCLocalSwiftPackageReference "../Packages/RdpServer" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 7EFB9AAD1DA8C07992BE4C35 /* Products */;
@@ -517,9 +529,25 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		CB63CE5C348A431C15016E84 /* XCLocalSwiftPackageReference "." */ = {
+		122DDF3689AAA3FEA00A4400 /* XCLocalSwiftPackageReference "../Packages/RdpProtocol" */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = .;
+			relativePath = ../Packages/RdpProtocol;
+		};
+		4BE54EB6BC13F11FE3837456 /* XCLocalSwiftPackageReference "../Packages/IRdpConfiguration" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/IRdpConfiguration;
+		};
+		78190E2E6B10D2F593EF3A05 /* XCLocalSwiftPackageReference "../Packages/RdpServer" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/RdpServer;
+		};
+		C85CE76945055F638BBAEB08 /* XCLocalSwiftPackageReference "../Packages/MacIntegration" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/MacIntegration;
+		};
+		D337F3E99CACD1FC1BF92175 /* XCLocalSwiftPackageReference "../Packages/IRdpServiceCore" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/IRdpServiceCore;
 		};
 /* End XCLocalSwiftPackageReference section */
 

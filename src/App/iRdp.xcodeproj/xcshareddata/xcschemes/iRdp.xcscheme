@@ -40,6 +40,61 @@
          </BuildableReference>
       </MacroExpansion>
       <Testables>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "RdpProtocolTests"
+               BuildableName = "RdpProtocolTests"
+               BlueprintName = "RdpProtocolTests"
+               ReferencedContainer = "container:../Packages/RdpProtocol">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "RdpServerTests"
+               BuildableName = "RdpServerTests"
+               BlueprintName = "RdpServerTests"
+               ReferencedContainer = "container:../Packages/RdpServer">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "IRdpConfigurationTests"
+               BuildableName = "IRdpConfigurationTests"
+               BlueprintName = "IRdpConfigurationTests"
+               ReferencedContainer = "container:../Packages/IRdpConfiguration">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "MacIntegrationTests"
+               BuildableName = "MacIntegrationTests"
+               BlueprintName = "MacIntegrationTests"
+               ReferencedContainer = "container:../Packages/MacIntegration">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "IRdpServiceCoreTests"
+               BuildableName = "IRdpServiceCoreTests"
+               BlueprintName = "IRdpServiceCoreTests"
+               ReferencedContainer = "container:../Packages/IRdpServiceCore">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
       <CommandLineArguments>
       </CommandLineArguments>
