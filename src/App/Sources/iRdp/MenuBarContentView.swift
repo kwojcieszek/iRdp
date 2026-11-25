@@ -30,6 +30,7 @@ struct MenuBarContentView: View {
         }
         Divider()
         if model.isServiceEnabled || model.isServiceRunning {
+            Button("Restart Service") { model.restartService() }
             Button("Stop Service") { model.stopService() }
         } else {
             Button("Start Service") { model.startService() }

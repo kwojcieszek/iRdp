@@ -127,6 +127,7 @@ The service can also be controlled from Terminal:
 ```bash
 /Applications/iRdp.app/Contents/MacOS/iRdp --start-service
 /Applications/iRdp.app/Contents/MacOS/iRdp --stop-service
+/Applications/iRdp.app/Contents/MacOS/iRdp --restart-service
 ```
 
 The service reads `~/Library/Application Support/iRdp/settings.json` and

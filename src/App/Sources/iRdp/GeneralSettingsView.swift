@@ -13,6 +13,8 @@ struct GeneralSettingsView: View {
                         .disabled(model.isServiceRunning)
                     Button("Stop Service") { model.stopService() }
                         .disabled(!model.isServiceEnabled && !model.isServiceRunning)
+                    Button("Restart Service") { model.restartService() }
+                        .disabled(!model.isServiceEnabled && !model.isServiceRunning)
                 }
                 Text("While the service is enabled it also starts automatically when you log in.")
                     .font(.footnote)

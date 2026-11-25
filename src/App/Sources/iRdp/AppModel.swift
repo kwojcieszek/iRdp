@@ -101,8 +101,13 @@ final class AppModel {
 
     /// Restarts the service so that it picks up newly granted permissions.
     func restartService() {
-        stopService()
-        startService()
+        do {
+            try serviceController.restart()
+            errorMessage = nil
+        } catch {
+            errorMessage = "Cannot restart the service: \(error.localizedDescription)"
+        }
+        refresh()
     }
 
     /// Reads the firewall state off the main thread (it runs `socketfilterfw`).

@@ -2,20 +2,26 @@ import AppKit
 
 /// Keeps the app out of the Dock and handles command line actions.
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    /// `iRdp --start-service` / `--stop-service` controls the service and exits (useful from Terminal or scripts).
+    /// `iRdp --start-service`, `--stop-service` and `--restart-service` control the service and exit (for Terminal or scripts).
     static let startServiceArgument = "--start-service"
     static let stopServiceArgument = "--stop-service"
+    static let restartServiceArgument = "--restart-service"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         let arguments = CommandLine.arguments
-        guard arguments.contains(Self.startServiceArgument) || arguments.contains(Self.stopServiceArgument) else { return }
+        let actions = [Self.startServiceArgument, Self.stopServiceArgument, Self.restartServiceArgument]
+        guard let action = arguments.first(where: actions.contains) else { return }
         let controller = ServiceController()
         do {
-            if arguments.contains(Self.startServiceArgument) {
+            switch action {
+            case Self.startServiceArgument:
                 try controller.start()
                 print("iRdpService started")
-            } else {
+            case Self.restartServiceArgument:
+                try controller.restart()
+                print("iRdpService restarted")
+            default:
                 try controller.stop()
                 print("iRdpService stopped")
             }

@@ -57,6 +57,20 @@ final class ServiceController {
         childProcess = nil
     }
 
+    /// Stops the service (if running) and starts it again, e.g. to pick up new permissions.
+    func restart() throws {
+        if let launchAgent {
+            if launchAgent.status == .enabled { try launchAgent.unregister() }
+        } else if let childProcess, childProcess.isRunning {
+            childProcess.terminate()
+            childProcess.waitUntilExit()
+            self.childProcess = nil
+        }
+        // Give launchd a moment to tear the old job down before registering it again.
+        Thread.sleep(forTimeInterval: 0.5)
+        try start()
+    }
+
     func openLoginItemsSettings() {
         SMAppService.openSystemSettingsLoginItems()
     }
