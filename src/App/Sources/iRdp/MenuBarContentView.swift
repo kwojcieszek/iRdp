@@ -35,9 +35,6 @@ struct MenuBarContentView: View {
         } else {
             Button("Start Service") { model.startService() }
         }
-        Picker("Image Quality", selection: $model.settings.sharedResources.quality) {
-            ForEach(StreamQuality.allCases) { Text($0.displayName).tag($0) }
-        }
         if model.requiresLoginItemApproval {
             Button("Allow in Login Items…") { model.openLoginItemsSettings() }
         }
