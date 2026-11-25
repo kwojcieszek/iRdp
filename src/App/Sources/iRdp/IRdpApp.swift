@@ -12,9 +12,8 @@ struct IRdpApp: App {
         } label: {
             MenuBarLabel(model: model)
         }
-        Window("iRdp Settings", id: SettingsView.windowID) {
+        Settings {
             SettingsView(model: model)
         }
-        .windowResizability(.contentSize)
     }
 }

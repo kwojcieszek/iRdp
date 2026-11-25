@@ -15,12 +15,23 @@ public final class RdpServer: Sendable {
     private let environment: RdpSessionEnvironment
     private let registry = RdpSessionRegistry()
     private let throttle: AuthenticationThrottle
+    private let quality: StreamingQualityHolder
     private let runtime = Mutex<Runtime?>(nil)
 
     public init(configuration: RdpServerConfiguration, environment: RdpSessionEnvironment, throttle: AuthenticationThrottle = AuthenticationThrottle()) {
         self.configuration = configuration
         self.environment = environment
         self.throttle = throttle
+        quality = StreamingQualityHolder(configuration.quality)
+    }
+
+    /// The quality new and running sessions use.
+    public var currentQuality: StreamingQuality { quality.current }
+
+    /// Changes the streaming quality of running sessions and of new connections, without reconnecting.
+    public func updateQuality(_ newQuality: StreamingQuality) {
+        quality.current = newQuality
+        registry.applyQuality(newQuality)
     }
 
     /// Address used for "0.0.0.0": the IPv6 wildcard, which also accepts IPv4 clients (dual stack).
@@ -42,6 +53,7 @@ public final class RdpServer: Sendable {
         let environment = environment
         let registry = registry
         let throttle = throttle
+        let quality = quality
         let bootstrap = ServerBootstrap(group: group)
             .serverChannelOption(ChannelOptions.backlog, value: 16)
             .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
@@ -53,7 +65,7 @@ public final class RdpServer: Sendable {
                 channel.eventLoop.makeCompletedFuture {
                     let operations = channel.pipeline.syncOperations
                     try operations.addHandler(ByteToMessageHandler(RdpFrameDecoder()))
-                    try operations.addHandler(RdpConnectionHandler(configuration: configuration, environment: environment, sslContext: sslContext, registry: registry, throttle: throttle))
+                    try operations.addHandler(RdpConnectionHandler(configuration: configuration, environment: environment, sslContext: sslContext, registry: registry, throttle: throttle, quality: quality))
                 }
             }
         do {

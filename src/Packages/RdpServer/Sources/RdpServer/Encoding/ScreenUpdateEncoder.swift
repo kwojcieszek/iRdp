@@ -12,7 +12,10 @@ public final class ScreenUpdateEncoder: FrameEncoding {
     public let includesCompressionHeader: Bool
     public private(set) var lastFrame: ScreenFrame?
     var usesFrameAcknowledgements: Bool { false }
-    var refinementFrameCount: Int { 0 }
+
+    func refinement() -> [[UInt8]]? { nil }
+
+    func apply(_ quality: StreamingQuality) {}
 
     public init(bitsPerPixel: Int, usesPlanarCompression: Bool = true, includesCompressionHeader: Bool = false) {
         self.bitsPerPixel = [16, 24, 32].contains(bitsPerPixel) ? bitsPerPixel : 32

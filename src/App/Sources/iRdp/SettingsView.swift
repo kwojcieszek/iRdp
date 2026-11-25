@@ -1,9 +1,7 @@
 import SwiftUI
 
-/// Settings window with one tab per area.
+/// Settings window with a macOS preferences style tab bar in the toolbar.
 struct SettingsView: View {
-    static let windowID = "settings"
-
     @Bindable var model: AppModel
 
     var body: some View {
@@ -21,7 +19,6 @@ struct SettingsView: View {
                 .tabItem { Label("Permissions", systemImage: "lock.shield") }
                 .tag(SettingsTab.permissions)
         }
-        .padding()
-        .frame(width: 520)
+        .frame(width: 560)
     }
 }

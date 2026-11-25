@@ -21,7 +21,7 @@ public final class ScreenCaptureFrameSource: NSObject, FrameSource, SCStreamOutp
 
     public let desktopSize: DesktopSize
     private let displayID: UInt32
-    private let framesPerSecond: Int
+    private var framesPerSecond: Int
     private let queue = DispatchQueue(label: "com.irdp.capture", qos: .userInteractive)
     private let lock = NSLock()
     // Guarded by `lock`.
@@ -40,14 +40,7 @@ public final class ScreenCaptureFrameSource: NSObject, FrameSource, SCStreamOutp
             throw CaptureError.displayNotFound(displayID)
         }
         let filter = SCContentFilter(display: display, excludingWindows: [])
-        let configuration = SCStreamConfiguration()
-        configuration.width = desktopSize.width
-        configuration.height = desktopSize.height
-        configuration.pixelFormat = kCVPixelFormatType_32BGRA
-        configuration.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(framesPerSecond))
-        configuration.showsCursor = false
-        configuration.queueDepth = 4
-        configuration.colorSpaceName = CGColorSpace.sRGB
+        let configuration = makeConfiguration(framesPerSecond: lock.withLock { self.framesPerSecond })
         let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
         try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
         lock.withLock {
@@ -56,6 +49,29 @@ public final class ScreenCaptureFrameSource: NSObject, FrameSource, SCStreamOutp
         }
         try await stream.startCapture()
         Self.logger.info("capturing display \(self.displayID) at \(self.desktopSize.width)x\(self.desktopSize.height)")
+    }
+
+    public func setFrameRate(_ framesPerSecond: Int) async {
+        let clamped = min(max(framesPerSecond, 1), 60)
+        let stream = lock.withLock { () -> SCStream? in
+            self.framesPerSecond = clamped
+            return self.stream
+        }
+        guard let stream else { return }
+        let configuration = makeConfiguration(framesPerSecond: clamped)
+        try? await stream.updateConfiguration(configuration)
+    }
+
+    private func makeConfiguration(framesPerSecond: Int) -> SCStreamConfiguration {
+        let configuration = SCStreamConfiguration()
+        configuration.width = desktopSize.width
+        configuration.height = desktopSize.height
+        configuration.pixelFormat = kCVPixelFormatType_32BGRA
+        configuration.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(framesPerSecond))
+        configuration.showsCursor = false
+        configuration.queueDepth = 4
+        configuration.colorSpaceName = CGColorSpace.sRGB
+        return configuration
     }
 
     public func stop() async {

@@ -27,7 +27,7 @@ public struct MacSessionResourcesFactory: Sendable {
         guard PermissionChecker.isScreenRecordingGranted else { throw FactoryError.screenRecordingNotGranted }
         guard let display = DisplayCatalog.display(withID: resources.displayID) else { throw FactoryError.noDisplay }
         let geometry = CaptureGeometry(display: display, resolution: resources.resolution)
-        let frameSource = ScreenCaptureFrameSource(displayID: display.id, desktopSize: geometry.desktopSize, framesPerSecond: resources.framesPerSecond)
+        let frameSource = ScreenCaptureFrameSource(displayID: display.id, desktopSize: geometry.desktopSize, framesPerSecond: resources.quality.framesPerSecond)
         let input: (any InputSink)? = resources.shareKeyboard || resources.shareMouse
             ? CoreGraphicsInputInjector(geometry: geometry, allowsKeyboard: resources.shareKeyboard, allowsMouse: resources.shareMouse, swapControlAndCommand: resources.swapControlAndCommand)
             : nil

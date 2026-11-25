@@ -17,6 +17,7 @@ final class RdpConnectionHandler: ChannelInboundHandler {
     private let sslContext: NIOSSLContext
     private let registry: RdpSessionRegistry
     private let throttle: AuthenticationThrottle
+    private let quality: StreamingQualityHolder
     private let sessionId = UUID()
 
     private var context: ChannelHandlerContext?
@@ -44,12 +45,13 @@ final class RdpConnectionHandler: ChannelInboundHandler {
     private var virtualChannelChunkLength = StaticChannelPdu.defaultChunkLength
     private var keyTranslator = KeyboardTextTranslator(keyboardLayout: 0)
 
-    init(configuration: RdpServerConfiguration, environment: RdpSessionEnvironment, sslContext: NIOSSLContext, registry: RdpSessionRegistry, throttle: AuthenticationThrottle) {
+    init(configuration: RdpServerConfiguration, environment: RdpSessionEnvironment, sslContext: NIOSSLContext, registry: RdpSessionRegistry, throttle: AuthenticationThrottle, quality: StreamingQualityHolder) {
         self.configuration = configuration
         self.environment = environment
         self.sslContext = sslContext
         self.registry = registry
         self.throttle = throttle
+        self.quality = quality
     }
 
     // MARK: - Channel events
@@ -239,7 +241,7 @@ final class RdpConnectionHandler: ChannelInboundHandler {
     }
 
     private func negotiateBitsPerPixel() -> Int {
-        let preferred = configuration.preferredBitsPerPixel
+        let preferred = quality.current.bitsPerPixel
         guard let core = clientData?.core else { return 16 }
         let supported = core.supportedColorDepths ?? 0
         let wants32 = (core.earlyCapabilityFlags ?? 0) & ClientCoreData.wants32BitsPerPixelSession != 0
@@ -425,21 +427,33 @@ final class RdpConnectionHandler: ChannelInboundHandler {
         authenticatedInputSink = resources.inputSink
         let bound = NIOLoopBound(self, eventLoop: context.eventLoop)
         let eventLoop = context.eventLoop
-        let replaced = registry.register(sessionId, maximumSessions: configuration.maximumSessions) {
-            eventLoop.execute { bound.value.disconnect(errorInfo: SetErrorInfoPdu.disconnectedByOtherConnection, reason: "replaced by a new session") }
-        }
+        let handle = RdpSessionHandle(
+            disconnect: { eventLoop.execute { bound.value.disconnect(errorInfo: SetErrorInfoPdu.disconnectedByOtherConnection, reason: "replaced by a new session") } },
+            applyQuality: { newQuality in eventLoop.execute { bound.value.applyQuality(newQuality) } }
+        )
+        let replaced = registry.register(sessionId, maximumSessions: configuration.maximumSessions, handle: handle)
         isRegistered = true
-        replaced.forEach { $0() }
+        replaced.forEach { $0.disconnect() }
         let info = RdpSessionInfo(id: sessionId, remoteAddress: remoteAddress, clientName: clientData?.core.clientName ?? "", userName: clientInfo?.userName ?? "", desktopSize: desktopSize, bitsPerPixel: bitsPerPixel, startedAt: Date())
         environment.observer?.sessionDidStart(info)
         Self.logger.info("session started for \(info.userName, privacy: .public) at \(info.desktopSize.width)x\(info.desktopSize.height)@\(info.bitsPerPixel)bpp")
         let frameSource = resources.frameSource
+        let framesPerSecond = quality.current.framesPerSecond
         Task {
             do {
                 try await frameSource.start { frame in pump.submit(frame) }
+                await frameSource.setFrameRate(framesPerSecond)
             } catch {
                 eventLoop.execute { bound.value.disconnect(errorInfo: SetErrorInfoPdu.serverDeniedConnection, reason: "screen capture failed: \(error)") }
             }
+        }
+    }
+
+    /// Applies a quality change to the running session (encoder bit rate, sharpening and capture frame rate).
+    private func applyQuality(_ newQuality: StreamingQuality) {
+        pump?.updateQuality(newQuality)
+        if let frameSource = resources?.frameSource {
+            Task { await frameSource.setFrameRate(newQuality.framesPerSecond) }
         }
     }
 
@@ -476,7 +490,7 @@ final class RdpConnectionHandler: ChannelInboundHandler {
         guard let chosen = GraphicsCapabilitySet.choose(from: sets), let pump, let channelId = drdynvcChannelId else { return }
         let codec: GraphicsPipelineCodec = configuration.usesVideoEncoding && chosen.supportsAvc420 ? .avc420 : .planar
         let packetize = Self.graphicsPacketizer(userId: userId, channelId: channelId, chunkLength: virtualChannelChunkLength)
-        let encoder = GraphicsFrameEncoder(desktopSize: desktopSize, codec: codec, bitRate: configuration.videoBitRate, framesPerSecond: configuration.framesPerSecond, wrap: packetize)
+        let encoder = GraphicsFrameEncoder(desktopSize: desktopSize, codec: codec, quality: quality.current, wrap: packetize)
         for packet in packetize(encoder.setupMessage(confirming: chosen)) { send(packet) }
         pump.replaceEncoder(encoder)
         Self.logger.info("graphics pipeline 0x\(String(chosen.version, radix: 16), privacy: .public) with \(codec == .avc420 ? "H.264 (AVC420)" : "planar", privacy: .public)")

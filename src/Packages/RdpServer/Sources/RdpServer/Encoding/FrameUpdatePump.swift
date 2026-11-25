@@ -20,7 +20,6 @@ final class FrameUpdatePump: @unchecked Sendable {
     private var fullRefreshRequested = true
     private var framesInFlight = 0
     private var acknowledgementsSuspended = false
-    private var refinementsLeft = 0
     private var refinementGeneration = 0
     private var statistics = FrameStatistics()
 
@@ -32,7 +31,7 @@ final class FrameUpdatePump: @unchecked Sendable {
     func submit(_ frame: ScreenFrame) {
         queue.async {
             self.pendingFrame = frame
-            self.refinementsLeft = self.encoder.refinementFrameCount
+            self.refinementGeneration += 1
             self.processIfIdle()
         }
     }
@@ -70,6 +69,15 @@ final class FrameUpdatePump: @unchecked Sendable {
             self.acknowledgementsSuspended = suspended
             self.framesInFlight = max(self.framesInFlight - 1, 0)
             self.processIfIdle()
+            if self.pendingFrame == nil, !self.isSending { self.scheduleRefinement() }
+        }
+    }
+
+    /// Applies new encoding parameters to the running session.
+    func updateQuality(_ quality: StreamingQuality) {
+        queue.async {
+            self.encoder.apply(quality)
+            self.scheduleRefinement()
         }
     }
 
@@ -105,16 +113,24 @@ final class FrameUpdatePump: @unchecked Sendable {
         }
     }
 
-    /// While the screen is still, re-encodes the last frame a few times so lossy video converges to a sharp image.
+    /// While the screen is still, asks the encoder to improve the image (e.g. lossless tiles over H.264).
     private func scheduleRefinement() {
-        guard refinementsLeft > 0, pendingFrame == nil else { return }
+        guard pendingFrame == nil else { return }
         refinementGeneration += 1
         let generation = refinementGeneration
         queue.asyncAfter(deadline: .now() + Self.refinementDelay) {
-            guard generation == self.refinementGeneration, self.refinementsLeft > 0, self.pendingFrame == nil, let last = self.encoder.lastFrame else { return }
-            self.refinementsLeft -= 1
-            self.pendingFrame = last
-            self.processIfIdle()
+            guard generation == self.refinementGeneration, self.pendingFrame == nil, !self.isSending, !self.isStopped, !self.isPaused, self.canSendFrame else { return }
+            guard let packets = self.encoder.refinement(), !packets.isEmpty else { return }
+            self.isSending = true
+            if self.encoder.usesFrameAcknowledgements { self.framesInFlight += 1 }
+            self.send(packets) { [weak self] in
+                guard let self else { return }
+                self.queue.async {
+                    self.isSending = false
+                    self.processIfIdle()
+                    self.scheduleRefinement()
+                }
+            }
         }
     }
 }

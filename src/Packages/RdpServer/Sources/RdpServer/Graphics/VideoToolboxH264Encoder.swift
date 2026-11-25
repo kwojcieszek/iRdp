@@ -62,6 +62,13 @@ final class VideoToolboxH264Encoder {
         VTCompressionSessionPrepareToEncodeFrames(created)
     }
 
+    /// Changes the bit rate of the running session.
+    func setBitRate(_ bitRate: Int, framesPerSecond: Int) {
+        guard let session else { return }
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AverageBitRate, value: bitRate as CFNumber)
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_ExpectedFrameRate, value: framesPerSecond as CFNumber)
+    }
+
     deinit {
         if let session { VTCompressionSessionInvalidate(session) }
     }

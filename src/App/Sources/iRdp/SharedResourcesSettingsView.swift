@@ -17,16 +17,17 @@ struct SharedResourcesSettingsView: View {
                 Picker("Resolution", selection: $model.settings.sharedResources.resolution) {
                     ForEach(CaptureResolution.allCases) { Text($0.displayName).tag($0) }
                 }
-                Picker("Color depth", selection: $model.settings.sharedResources.colorDepth) {
-                    ForEach(ColorDepth.allCases) { Text($0.displayName).tag($0) }
-                }
-                Stepper("Frame rate: \(model.settings.sharedResources.framesPerSecond) fps", value: $model.settings.sharedResources.framesPerSecond, in: 1...60)
             }
-            Section("Video") {
+            Section("Image quality") {
+                Picker("Quality", selection: $model.settings.sharedResources.quality) {
+                    ForEach(StreamQuality.allCases) { Text($0.displayName).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                Text(model.settings.sharedResources.quality.summary)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
                 Toggle("Hardware H.264 encoding (lowest latency)", isOn: $model.settings.sharedResources.usesVideoEncoding)
-                Stepper("Bit rate: \(model.settings.sharedResources.videoBitRateMegabits) Mbit/s", value: $model.settings.sharedResources.videoBitRateMegabits, in: 2...100, step: 2)
-                    .disabled(!model.settings.sharedResources.usesVideoEncoding)
-                Text("Used with clients that support the RDP graphics pipeline (Windows App, mstsc). Other clients get compressed bitmaps.")
+                Text("Quality changes apply immediately, also to connected clients. H.264 is used with clients that support the RDP graphics pipeline (Windows App, mstsc).")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -37,7 +38,7 @@ struct SharedResourcesSettingsView: View {
                     .disabled(!model.settings.sharedResources.shareKeyboard)
             }
             Section {
-                Text("Only the screen image, mouse and keyboard are shared. Changes apply to new connections.")
+                Text("Only the screen image, mouse and keyboard are shared. Display, resolution and input changes apply to new connections.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

@@ -1,18 +1,18 @@
 import Foundation
 import Synchronization
 
-/// Tracks active sessions so that a new session can take over from the previous one.
+/// Tracks active sessions so that a new session can take over from the previous one and quality changes reach them.
 final class RdpSessionRegistry: Sendable {
-    private let sessions = Mutex<[UUID: @Sendable () -> Void]>([:])
+    private let sessions = Mutex<[UUID: RdpSessionHandle]>([:])
 
-    /// Registers a session and returns the disconnect handlers of the sessions it replaces.
-    func register(_ id: UUID, maximumSessions: Int, disconnect: @escaping @Sendable () -> Void) -> [@Sendable () -> Void] {
+    /// Registers a session and returns the sessions it replaces (to be disconnected by the caller).
+    func register(_ id: UUID, maximumSessions: Int, handle: RdpSessionHandle) -> [RdpSessionHandle] {
         sessions.withLock { sessions in
-            var replaced: [@Sendable () -> Void] = []
+            var replaced: [RdpSessionHandle] = []
             while sessions.count >= max(maximumSessions, 1), let oldest = sessions.keys.first {
-                if let handler = sessions.removeValue(forKey: oldest) { replaced.append(handler) }
+                if let handle = sessions.removeValue(forKey: oldest) { replaced.append(handle) }
             }
-            sessions[id] = disconnect
+            sessions[id] = handle
             return replaced
         }
     }
@@ -23,11 +23,16 @@ final class RdpSessionRegistry: Sendable {
 
     var count: Int { sessions.withLock { $0.count } }
 
+    func applyQuality(_ quality: StreamingQuality) {
+        let handles = sessions.withLock { Array($0.values) }
+        handles.forEach { $0.applyQuality(quality) }
+    }
+
     func disconnectAll() {
-        let handlers = sessions.withLock { sessions in
+        let handles = sessions.withLock { sessions in
             defer { sessions.removeAll() }
             return Array(sessions.values)
         }
-        handlers.forEach { $0() }
+        handles.forEach { $0.disconnect() }
     }
 }

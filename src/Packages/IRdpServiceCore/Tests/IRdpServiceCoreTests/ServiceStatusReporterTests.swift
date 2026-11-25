@@ -21,3 +21,23 @@ struct ServiceStatusReporterTests {
         #expect(store.load()?.lastError == "10.0.0.1: authentication failed")
     }
 }
+
+struct ServiceRuntimeQualityTests {
+    @Test func detectsQualityOnlyChanges() {
+        let base = ServerSettings()
+        var quality = base
+        quality.sharedResources.quality = .high
+        var port = quality
+        port.port = 4000
+        #expect(ServiceRuntime.differOnlyInQuality(base, quality))
+        #expect(!ServiceRuntime.differOnlyInQuality(base, port))
+        #expect(!ServiceRuntime.differOnlyInQuality(base, base))
+    }
+
+    @Test func mapsQualityLevels() {
+        let high = ServiceRuntime.streamingQuality(for: .high)
+        #expect(high.videoBitRate == 40_000_000 && high.framesPerSecond == 60 && high.sharpensStillImages)
+        let low = ServiceRuntime.streamingQuality(for: .low)
+        #expect(low.bitsPerPixel == 16 && !low.sharpensStillImages)
+    }
+}

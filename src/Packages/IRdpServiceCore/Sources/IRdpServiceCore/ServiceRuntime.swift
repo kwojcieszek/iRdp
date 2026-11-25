@@ -44,6 +44,19 @@ public actor ServiceRuntime {
         }
     }
 
+    static func streamingQuality(for quality: StreamQuality) -> StreamingQuality {
+        StreamingQuality(videoBitRate: quality.videoBitRate, framesPerSecond: quality.framesPerSecond, bitsPerPixel: quality.bitsPerPixel, sharpensStillImages: quality.sharpensStillImages)
+    }
+
+    /// True when the only difference is the stream quality, which running sessions can apply without a restart.
+    static func differOnlyInQuality(_ lhs: ServerSettings, _ rhs: ServerSettings) -> Bool {
+        var left = lhs
+        var right = rhs
+        left.sharedResources = lhs.sharedResources.ignoringQuality()
+        right.sharedResources = rhs.sharedResources.ignoringQuality()
+        return left == right && lhs.sharedResources.quality != rhs.sharedResources.quality
+    }
+
     /// The account the logon screen suggests: the logged-in user for macOS accounts, the iRdp user otherwise.
     static func suggestedAccount(for settings: ServerSettings) -> (userName: String?, displayName: String?) {
         switch settings.loginMode {
@@ -56,6 +69,12 @@ public actor ServiceRuntime {
     func applySettingsIfNeeded() async {
         let settings = settingsStore.load()
         guard settings != appliedSettings else { return }
+        if let applied = appliedSettings, let server, Self.differOnlyInQuality(applied, settings) {
+            appliedSettings = settings
+            server.updateQuality(Self.streamingQuality(for: settings.sharedResources.quality))
+            Self.logger.info("streaming quality changed to \(settings.sharedResources.quality.rawValue, privacy: .public)")
+            return
+        }
         appliedSettings = settings
         await server?.stop()
         server = nil
@@ -75,7 +94,7 @@ public actor ServiceRuntime {
         do {
             let certificate = try TlsCertificateStore(directory: paths.certificateDirectory).loadOrCreate(commonName: Host.current().localizedName ?? "iRdp")
             let fingerprint = try? SelfSignedCertificateGenerator.fingerprint(ofCertificatePEM: certificate.certificatePEM)
-            let configuration = RdpServerConfiguration(host: settings.listenAddress, port: settings.port, certificate: certificate, preferredBitsPerPixel: settings.sharedResources.colorDepth.rawValue, usesVideoEncoding: settings.sharedResources.usesVideoEncoding, videoBitRate: max(settings.sharedResources.videoBitRateMegabits, 1) * 1_000_000, framesPerSecond: settings.sharedResources.framesPerSecond)
+            let configuration = RdpServerConfiguration(host: settings.listenAddress, port: settings.port, certificate: certificate, usesVideoEncoding: settings.sharedResources.usesVideoEncoding, quality: Self.streamingQuality(for: settings.sharedResources.quality))
             let factory = MacSessionResourcesFactory(resources: settings.sharedResources)
             let environment = RdpSessionEnvironment(
                 credentialValidator: SettingsCredentialValidator(settings: settings, accountVerifier: OpenDirectoryCredentialValidator()),
