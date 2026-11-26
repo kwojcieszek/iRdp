@@ -18,6 +18,13 @@ final class RdpConnectionHandler: ChannelInboundHandler {
     private let registry: RdpSessionRegistry
     private let throttle: AuthenticationThrottle
     private let quality: StreamingQualityHolder
+    private let framing: RdpFramingState
+    private var credSsp: CredSspServer?
+    /// User authenticated by network level authentication; the Client Info credentials are then not needed.
+    private var networkAuthenticatedUser: String?
+    private var selectedProtocol: SecurityProtocols = .tls
+    /// RDP frames that arrive while the CredSSP credentials are still being verified.
+    private var framesAwaitingAuthentication: [RdpInboundFrame] = []
     private let sessionId = UUID()
 
     private var context: ChannelHandlerContext?
@@ -46,13 +53,14 @@ final class RdpConnectionHandler: ChannelInboundHandler {
     private var virtualChannelChunkLength = StaticChannelPdu.defaultChunkLength
     private var keyTranslator = KeyboardTextTranslator(keyboardLayout: 0)
 
-    init(configuration: RdpServerConfiguration, environment: RdpSessionEnvironment, sslContext: NIOSSLContext, registry: RdpSessionRegistry, throttle: AuthenticationThrottle, quality: StreamingQualityHolder) {
+    init(configuration: RdpServerConfiguration, environment: RdpSessionEnvironment, sslContext: NIOSSLContext, registry: RdpSessionRegistry, throttle: AuthenticationThrottle, quality: StreamingQualityHolder, framing: RdpFramingState) {
         self.configuration = configuration
         self.environment = environment
         self.sslContext = sslContext
         self.registry = registry
         self.throttle = throttle
         self.quality = quality
+        self.framing = framing
     }
 
     // MARK: - Channel events
@@ -63,13 +71,22 @@ final class RdpConnectionHandler: ChannelInboundHandler {
     }
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
-        let frame = unwrapInboundIn(data)
+        process(unwrapInboundIn(data))
+    }
+
+    private func process(_ frame: RdpInboundFrame) {
+        if phase == .credSsp, frame.kind != .credSsp {
+            framesAwaitingAuthentication.append(frame)
+            return
+        }
         do {
             switch frame.kind {
             case .tpkt:
                 try handleTpkt(TpktPacket.unwrap(frame.bytes))
             case .fastPath:
                 try handleFastPathInput(frame.bytes)
+            case .credSsp:
+                handleCredSsp(frame.bytes)
             }
         } catch {
             fail("protocol error: \(error)")
@@ -111,10 +128,95 @@ final class RdpConnectionHandler: ChannelInboundHandler {
         }
         var flags = X224ConnectionConfirm.extendedClientDataSupported
         if configuration.usesGraphicsPipeline { flags |= X224ConnectionConfirm.dynamicVirtualChannelGraphicsSupported }
-        send(TpktPacket.wrap(X224ConnectionConfirm(outcome: .selected(.tls, flags: flags)).encode()))
+        if configuration.requiresNetworkLevelAuthentication {
+            if request.requestedProtocols.contains(.credSsp) {
+                selectedProtocol = .credSsp
+            } else if request.requestedProtocols.contains(.credSspWithEarlyUserAuthorization) {
+                selectedProtocol = .credSspWithEarlyUserAuthorization
+            } else {
+                Self.logger.notice("client \(self.remoteAddress, privacy: .public) does not support network level authentication")
+                send(TpktPacket.wrap(X224ConnectionConfirm(outcome: .failure(.hybridRequiredByServer)).encode()))
+                fail("client does not support network level authentication")
+                return
+            }
+        }
+        send(TpktPacket.wrap(X224ConnectionConfirm(outcome: .selected(selectedProtocol, flags: flags)).encode()))
         guard let context else { return }
         try context.pipeline.syncOperations.addHandler(NIOSSLServerHandler(context: sslContext), position: .first)
+        if selectedProtocol == .tls {
+            phase = .awaitingConnectInitial
+        } else {
+            let publicKey = try SubjectPublicKey.of(certificatePEM: configuration.certificate.certificatePEM)
+            credSsp = CredSspServer(publicKey: publicKey, computerName: Self.netBiosName(configuration.serverName), ntHash: environment.ntHash)
+            framing.expectsCredSsp = true
+            phase = .credSsp
+        }
+    }
+
+    // MARK: - Network level authentication
+
+    static func netBiosName(_ name: String) -> String {
+        let base = name.split(separator: ".").first.map(String.init) ?? name
+        return String(base.uppercased().filter { $0.isLetter || $0.isNumber || $0 == "-" }.prefix(15))
+    }
+
+    private func handleCredSsp(_ bytes: [UInt8]) {
+        guard phase == .credSsp, var server = credSsp else { return fail("unexpected CredSSP message") }
+        if throttle.isLockedOut(remoteAddress) {
+            return fail("too many failed logins")
+        }
+        let step = server.receive(bytes)
+        credSsp = server
+        switch step {
+        case .respond(let response):
+            send(response)
+        case .failed(let reason, let response):
+            Self.logger.notice("network level authentication of \(server.authenticatedUserName, privacy: .public) from \(self.remoteAddress, privacy: .public) failed: \(reason, privacy: .public)")
+            throttle.recordFailure(remoteAddress)
+            if let response { send(response) }
+            environment.observer?.connectionDidFail(remoteAddress: remoteAddress, reason: "authentication failed")
+            close()
+        case .completed(let credentials):
+            // The client continues with RDP right away; queue its frames until the credentials are verified.
+            framing.expectsCredSsp = false
+            verifyNetworkCredentials(credentials)
+        }
+    }
+
+    /// The NTLM exchange proved the password; it is checked once more with the configured login type.
+    private func verifyNetworkCredentials(_ credentials: TsCredentials) {
+        guard let context else { return }
+        let environment = environment
+        let bound = NIOLoopBound(self, eventLoop: context.eventLoop)
+        let eventLoop = context.eventLoop
+        let clientCredentials = ClientCredentials(userName: credentials.userName, domain: credentials.domain, password: credentials.password)
+        Task {
+            let isValid = await environment.credentialValidator.validate(clientCredentials)
+            eventLoop.execute { bound.value.networkCredentialsVerified(userName: credentials.userName, isValid: isValid) }
+        }
+    }
+
+    private func networkCredentialsVerified(userName: String, isValid: Bool) {
+        guard phase == .credSsp else { return }
+        guard isValid else {
+            throttle.recordFailure(remoteAddress)
+            environment.observer?.connectionDidFail(remoteAddress: remoteAddress, reason: "authentication failed")
+            return fail("network credentials rejected by the login type")
+        }
+        throttle.recordSuccess(remoteAddress)
+        networkAuthenticatedUser = userName
+        credSsp = nil
+        framing.expectsCredSsp = false
+        if selectedProtocol == .credSspWithEarlyUserAuthorization {
+            send([0, 0, 0, 0])
+        }
         phase = .awaitingConnectInitial
+        Self.logger.notice("\(userName, privacy: .public) from \(self.remoteAddress, privacy: .public) passed network level authentication")
+        let queued = framesAwaitingAuthentication
+        framesAwaitingAuthentication = []
+        for frame in queued where phase != .closed {
+            process(frame)
+        }
     }
 
     private func handleConnectInitial(_ initial: McsConnectInitial) throws {
@@ -182,11 +284,13 @@ final class RdpConnectionHandler: ChannelInboundHandler {
         let address = remoteAddress
         // With "always show the logon screen", credentials saved in the client are not used at all.
         let usesClientCredentials = !configuration.alwaysShowsLogonScreen
+        let networkAuthenticated = networkAuthenticatedUser != nil
+        if let networkAuthenticatedUser { clientInfo?.userName = networkAuthenticatedUser }
         Task {
             let isLockedOut = throttle.isLockedOut(address)
-            let isValid = isLockedOut || !usesClientCredentials ? false : await environment.credentialValidator.validate(credentials)
+            let isValid = networkAuthenticated ? true : isLockedOut || !usesClientCredentials ? false : await environment.credentialValidator.validate(credentials)
             // An empty password means the client wants the logon screen; it is not a failed attempt.
-            if !isLockedOut, usesClientCredentials, isValid || !credentials.password.isEmpty {
+            if !networkAuthenticated, !isLockedOut, usesClientCredentials, isValid || !credentials.password.isEmpty {
                 if isValid { throttle.recordSuccess(address) } else { throttle.recordFailure(address) }
             }
             let result: SessionResourcesOutcome
@@ -218,7 +322,8 @@ final class RdpConnectionHandler: ChannelInboundHandler {
         }
         isAuthenticated = isValid
         if isValid {
-            Self.logger.notice("\(self.clientInfo?.userName ?? "", privacy: .public) from \(self.remoteAddress, privacy: .public) signed in with credentials sent by the client")
+            let method = networkAuthenticatedUser != nil ? "network level authentication" : "credentials sent by the client"
+            Self.logger.notice("\(self.clientInfo?.userName ?? "", privacy: .public) from \(self.remoteAddress, privacy: .public) signed in with \(method, privacy: .public)")
         }
         switch result {
         case .ready(let resources):

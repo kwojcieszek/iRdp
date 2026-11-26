@@ -37,9 +37,11 @@ struct ServerSettingsTests {
     }
 
     @Test func reportsValidationIssues() {
-        #expect(ServerSettings().validationIssues.isEmpty)
-        #expect(ServerSettings(port: 0).validationIssues.count == 1)
-        let missingPassword = ServerSettings(loginMode: .applicationPassword)
+        #expect(ServerSettings().validationIssues == ["Set the RDP password in Settings › Login."])
+        #expect(ServerSettings(networkPasswordHashes: ["kamil": "AA=="]).validationIssues.isEmpty)
+        #expect(ServerSettings(requiresNetworkLevelAuthentication: false).validationIssues.isEmpty)
+        #expect(ServerSettings(port: 0, requiresNetworkLevelAuthentication: false).validationIssues.count == 1)
+        let missingPassword = ServerSettings(loginMode: .applicationPassword, requiresNetworkLevelAuthentication: false)
         #expect(missingPassword.validationIssues == ["Password is not set."])
     }
 }

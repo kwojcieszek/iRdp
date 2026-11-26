@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		079E1A12E08243889278A7BB /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D6138986611A4DAB96348670 /* Assets.xcassets */; };
 		0FEC145ACD28F4BCB3CB80F0 /* com.irdp.service.plist in CopyFiles */ = {isa = PBXBuildFile; fileRef = E746FD990B841FCD8E463BBC /* com.irdp.service.plist */; };
 		141158E602D63297438D5463 /* PermissionState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B37E33A9D5467A872259436C /* PermissionState.swift */; };
 		1A812DD406C2F5CA664802EE /* SignalSources.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F86D566DFFC76C31D063AF9 /* SignalSources.swift */; };
@@ -20,6 +19,7 @@
 		5D26AD7ADE0C75A53DAE1A18 /* ServiceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BA597EE3D82FB7604011C2F /* ServiceController.swift */; };
 		6072BAEAFBC92B474CA39900 /* PermissionsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D98F4E5577405C87F0CF7A76 /* PermissionsSettingsView.swift */; };
 		61A20978D1E6DA7AE6F05CF0 /* IRdpServiceCore in Frameworks */ = {isa = PBXBuildFile; productRef = 046EAE6B798C68027027F4C9 /* IRdpServiceCore */; };
+		72365A2802953C28BFDD85F2 /* RdpServer in Frameworks */ = {isa = PBXBuildFile; productRef = 65322DF45C0FC40A3CE15135 /* RdpServer */; };
 		85AAB26C083800F0577B9AE1 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF63216E79CA5F8FB697E4AB /* AppModel.swift */; };
 		8A2D30322BBFCD4D959B023F /* IRdpApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EBBD21A47FC58F10205AB34 /* IRdpApp.swift */; };
 		A74C1A6384F49D8B2F8B765D /* MenuBarLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FDD587645D38C73B12C77E8 /* MenuBarLabel.swift */; };
@@ -66,7 +66,6 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		D6138986611A4DAB96348670 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		08318AE2914E0FD7AD3830C8 /* PrivacyPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyPane.swift; sourceTree = "<group>"; };
 		083FEF059397B910CF06A093 /* GeneralSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneralSettingsView.swift; sourceTree = "<group>"; };
 		0F86D566DFFC76C31D063AF9 /* SignalSources.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalSources.swift; sourceTree = "<group>"; };
@@ -108,6 +107,7 @@
 			files = (
 				AFEB2385B8391768F0E50198 /* IRdpConfiguration in Frameworks */,
 				2B7A72001A0A15DBB2E72E49 /* MacIntegration in Frameworks */,
+				72365A2802953C28BFDD85F2 /* RdpServer in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -129,7 +129,6 @@
 		4C30BA4E0E4A2DD04D2CEC85 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
-				D6138986611A4DAB96348670 /* Assets.xcassets */,
 				E746FD990B841FCD8E463BBC /* com.irdp.service.plist */,
 			);
 			path = Resources;
@@ -220,7 +219,6 @@
 			buildConfigurationList = 5B3F9ED0E0F95114F8FBB193 /* Build configuration list for PBXNativeTarget "iRdp" */;
 			buildPhases = (
 				7AF96B04480BC693CAF05463 /* Sources */,
-				AC4428F720584C9EA6592070 /* Resources */,
 				00D7B924FDF5C9D517371C60 /* CopyFiles */,
 				B65EA576B7A2643A3C3D2082 /* Frameworks */,
 				AAA573375E6A431672E2D5FE /* Embed Dependencies */,
@@ -234,6 +232,7 @@
 			packageProductDependencies = (
 				87BA4973979D2544258A11DF /* IRdpConfiguration */,
 				55372DCE95200A3D59F49C31 /* MacIntegration */,
+				65322DF45C0FC40A3CE15135 /* RdpServer */,
 			);
 			productName = iRdp;
 			productReference = CB7E2C0462AC02791BB60C48 /* iRdp.app */;
@@ -284,17 +283,6 @@
 			);
 		};
 /* End PBXProject section */
-
-/* Begin PBXResourcesBuildPhase section */
-		AC4428F720584C9EA6592070 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				079E1A12E08243889278A7BB /* Assets.xcassets in Resources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		6E5F9A99A20ED26A5788C705 /* Sources */ = {
@@ -592,6 +580,10 @@
 		55372DCE95200A3D59F49C31 /* MacIntegration */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = MacIntegration;
+		};
+		65322DF45C0FC40A3CE15135 /* RdpServer */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = RdpServer;
 		};
 		87BA4973979D2544258A11DF /* IRdpConfiguration */ = {
 			isa = XCSwiftPackageProductDependency;

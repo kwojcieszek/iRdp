@@ -53,6 +53,7 @@ targets:
     dependencies:
       - package: IRdpConfiguration
       - package: MacIntegration
+      - package: RdpServer
       - target: iRdpService
         copy:
           destination: executables

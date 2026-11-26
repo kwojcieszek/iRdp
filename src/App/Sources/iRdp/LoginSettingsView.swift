@@ -6,6 +6,8 @@ struct LoginSettingsView: View {
     @Bindable var model: AppModel
     @State private var newPassword = ""
     @State private var confirmation = ""
+    @State private var networkPassword = ""
+    @State private var networkPasswordMessage: String?
 
     var body: some View {
         Form {
@@ -18,11 +20,36 @@ struct LoginSettingsView: View {
                 .pickerStyle(.radioGroup)
             }
             if model.settings.loginMode != .none {
-                Section {
-                    Toggle("Always ask for the password on the iRdp logon screen", isOn: $model.settings.alwaysShowLogonScreen)
-                    Text("When on, passwords saved in RDP clients such as Windows App are ignored and everyone signs in on the logon screen.")
+                Section("RDP login") {
+                    Toggle("Require Network Level Authentication", isOn: $model.settings.requiresNetworkLevelAuthentication)
+                    Text(model.settings.requiresNetworkLevelAuthentication
+                         ? "The RDP client (Windows App, mstsc) asks for the user name and password before connecting. Wrong passwords are rejected before any session starts."
+                         : "Users sign in on the iRdp logon screen inside the session.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                    if model.settings.requiresNetworkLevelAuthentication, model.settings.loginMode == .macOSAccount {
+                        SecureField("Password of \(NSUserName())", text: $networkPassword)
+                        HStack {
+                            Text(networkPasswordMessage ?? (model.hasMacOSNetworkPassword ? "RDP password is set" : "RDP password is not set"))
+                                .foregroundStyle(model.hasMacOSNetworkPassword && networkPasswordMessage == nil ? Color.secondary : Color.orange)
+                            Spacer()
+                            Button("Save RDP Password") {
+                                let password = networkPassword
+                                Task {
+                                    let saved = await model.setMacOSNetworkPassword(password)
+                                    networkPasswordMessage = saved ? nil : "This is not the password of \(NSUserName())."
+                                    if saved { networkPassword = "" }
+                                }
+                            }
+                            .disabled(networkPassword.isEmpty)
+                        }
+                        Text("RDP login checks the password itself, so iRdp keeps a protected hash of your macOS password. Save it again after changing your macOS password.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    if !model.settings.requiresNetworkLevelAuthentication {
+                        Toggle("Always ask for the password on the iRdp logon screen", isOn: $model.settings.alwaysShowLogonScreen)
+                    }
                 }
             }
             switch model.settings.loginMode {
@@ -57,7 +84,7 @@ struct LoginSettingsView: View {
                 }
             }
             Section {
-                Text("Connections are encrypted with TLS. Users sign in on the iRdp logon screen, or with credentials saved in the RDP client when the option above is off.")
+                Text("Connections are encrypted with TLS. The screen is captured only after a successful login.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

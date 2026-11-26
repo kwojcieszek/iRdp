@@ -41,3 +41,18 @@ struct ServiceRuntimeQualityTests {
         #expect(low.bitsPerPixel == 16 && !low.sharpensStillImages)
     }
 }
+
+struct NetworkPasswordHashTests {
+    @Test func returnsHashOnlyForAllowedAccounts() {
+        var settings = ServerSettings(loginMode: .macOSAccount, restrictToCurrentUser: true)
+        settings.networkPasswordHashes = ["kamil": "AAECAw==", "other": "BAUGBw=="]
+        #expect(ServiceRuntime.networkPasswordHash(for: "Kamil", settings: settings, currentUserName: "kamil") == [0, 1, 2, 3])
+        #expect(ServiceRuntime.networkPasswordHash(for: "other", settings: settings, currentUserName: "kamil") == nil)
+        settings.loginMode = .none
+        #expect(ServiceRuntime.networkPasswordHash(for: "kamil", settings: settings, currentUserName: "kamil") == nil)
+        settings.loginMode = .applicationPassword
+        settings.applicationUserName = "irdp"
+        settings.networkPasswordHashes = ["irdp": "AAECAw=="]
+        #expect(ServiceRuntime.networkPasswordHash(for: "IRDP", settings: settings, currentUserName: "kamil") == [0, 1, 2, 3])
+    }
+}

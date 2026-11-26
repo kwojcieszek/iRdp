@@ -64,8 +64,9 @@ public final class RdpServer: Sendable {
             .childChannelInitializer { channel in
                 channel.eventLoop.makeCompletedFuture {
                     let operations = channel.pipeline.syncOperations
-                    try operations.addHandler(ByteToMessageHandler(RdpFrameDecoder()))
-                    try operations.addHandler(RdpConnectionHandler(configuration: configuration, environment: environment, sslContext: sslContext, registry: registry, throttle: throttle, quality: quality))
+                    let framing = RdpFramingState()
+                    try operations.addHandler(ByteToMessageHandler(RdpFrameDecoder(framing: framing)))
+                    try operations.addHandler(RdpConnectionHandler(configuration: configuration, environment: environment, sslContext: sslContext, registry: registry, throttle: throttle, quality: quality, framing: framing))
                 }
             }
         do {

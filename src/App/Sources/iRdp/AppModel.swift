@@ -3,6 +3,7 @@ import Foundation
 import IRdpConfiguration
 import MacIntegration
 import Observation
+import RdpServer
 
 /// State of the menu bar app: settings being edited and the service status.
 @MainActor
@@ -147,6 +148,21 @@ final class AppModel {
     func setApplicationPassword(_ password: String) {
         guard !password.isEmpty else { return }
         settings.applicationPasswordHash = PasswordHasher.makeHash(for: password)
+        settings.networkPasswordHashes = [settings.applicationUserName.lowercased(): Data(NtHash.of(password: password)).base64EncodedString()]
+    }
+
+    /// Saves the RDP (network level authentication) password of the logged-in macOS account after checking it.
+    /// Returns false when the password is not the account's password.
+    func setMacOSNetworkPassword(_ password: String) async -> Bool {
+        let userName = NSUserName()
+        let verified = await Task.detached { OpenDirectoryCredentialValidator().verify(userName: userName, password: password) != nil }.value
+        guard verified else { return false }
+        settings.networkPasswordHashes[userName.lowercased()] = Data(NtHash.of(password: password)).base64EncodedString()
+        return true
+    }
+
+    var hasMacOSNetworkPassword: Bool {
+        settings.networkPasswordHashes[NSUserName().lowercased()] != nil
     }
 
     func openLoginItemsSettings() {

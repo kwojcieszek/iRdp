@@ -44,6 +44,20 @@ public actor ServiceRuntime {
         }
     }
 
+    /// NT hash for network level authentication, only for the accounts the login type allows.
+    static func networkPasswordHash(for userName: String, settings: ServerSettings, currentUserName: String = NSUserName()) -> [UInt8]? {
+        let name = SettingsCredentialValidator.plainUserName(userName).lowercased()
+        switch settings.loginMode {
+        case .none:
+            return nil
+        case .applicationPassword:
+            guard name == settings.applicationUserName.lowercased() else { return nil }
+        case .macOSAccount:
+            if settings.restrictToCurrentUser, name != currentUserName.lowercased() { return nil }
+        }
+        return settings.networkPasswordHashes[name].flatMap { Data(base64Encoded: $0) }.map(Array.init)
+    }
+
     static func streamingQuality(for quality: StreamQuality) -> StreamingQuality {
         StreamingQuality(videoBitRate: quality.videoBitRate, framesPerSecond: quality.framesPerSecond, bitsPerPixel: quality.bitsPerPixel, sharpensStillImages: quality.sharpensStillImages)
     }
@@ -85,7 +99,7 @@ public actor ServiceRuntime {
         do {
             let certificate = try TlsCertificateStore(directory: paths.certificateDirectory).loadOrCreate(commonName: Host.current().localizedName ?? "iRdp")
             let fingerprint = try? SelfSignedCertificateGenerator.fingerprint(ofCertificatePEM: certificate.certificatePEM)
-            let configuration = RdpServerConfiguration(host: settings.listenAddress, port: settings.port, certificate: certificate, usesVideoEncoding: settings.sharedResources.usesVideoEncoding, quality: Self.streamingQuality(for: settings.sharedResources.quality), alwaysShowsLogonScreen: settings.alwaysShowLogonScreen && settings.loginMode != .none)
+            let configuration = RdpServerConfiguration(host: settings.listenAddress, port: settings.port, certificate: certificate, usesVideoEncoding: settings.sharedResources.usesVideoEncoding, quality: Self.streamingQuality(for: settings.sharedResources.quality), alwaysShowsLogonScreen: settings.alwaysShowLogonScreen && settings.loginMode != .none, requiresNetworkLevelAuthentication: settings.requiresNetworkLevelAuthentication && settings.loginMode != .none)
             let factory = MacSessionResourcesFactory(resources: settings.sharedResources)
             let environment = RdpSessionEnvironment(
                 credentialValidator: SettingsCredentialValidator(settings: settings, accountVerifier: OpenDirectoryCredentialValidator()),
@@ -97,7 +111,8 @@ public actor ServiceRuntime {
                 },
                 observer: reporter,
                 logonAppearance: { LogonScreenAppearance(serverName: Host.current().localizedName) },
-                desktopSize: { factory.desktopSize() }
+                desktopSize: { factory.desktopSize() },
+                ntHash: { userName in Self.networkPasswordHash(for: userName, settings: settings) }
             )
             let server = RdpServer(configuration: configuration, environment: environment)
             let port = try await server.start()
