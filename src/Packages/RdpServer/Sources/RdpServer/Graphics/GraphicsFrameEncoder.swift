@@ -2,17 +2,15 @@ import Foundation
 import os
 import RdpProtocol
 
-/// Encodes screen frames as RDPGFX frames: H.264 (AVC420) for changed areas while things move, and lossless planar
-/// tiles over the H.264 areas once the image is still, so text ends up sharp. Clients without AVC get planar tiles only.
+/// Encodes screen frames as RDPGFX frames: full-surface H.264 (AVC420), refined by re-encoding once the image is still.
+/// Clients without AVC get lossless planar tiles of the changed areas.
 final class GraphicsFrameEncoder: FrameEncoding {
     private static let logger = Logger(subsystem: "com.irdp", category: "graphics")
     static let surfaceId: UInt16 = 0
-    /// Above this many region rectangles a frame updates the whole screen.
-    static let maximumRegions = 256
-    /// Lossless tiles are sent in frames of at most this many bytes, so every RDPGFX message fits in one segment.
+    /// Lossless planar tiles are sent in frames of at most this many bytes, so every RDPGFX message fits in one segment.
     static let maximumRefinementBytes = 48 * 1024
-    /// H.264 refinement frames for qualities without lossless sharpening.
-    static let videoRefinementFrames = 2
+    /// H.264 re-encodes of a still image (Good and High; Low does one).
+    static let videoRefinementFrames = 3
 
     let desktopSize: DesktopSize
     let encodedSize: DesktopSize
@@ -25,8 +23,6 @@ final class GraphicsFrameEncoder: FrameEncoding {
     private let startTime = Date()
     private(set) var lastFrame: ScreenFrame?
     private(set) var lastFrameId: UInt32 = 0
-    /// Tiles last drawn with lossy H.264 and not yet replaced by lossless tiles.
-    private(set) var lossyTiles = Set<Int>()
     private var videoRefinementsLeft = 0
     private(set) var framesInLastBatch = 1
 
@@ -65,14 +61,12 @@ final class GraphicsFrameEncoder: FrameEncoding {
         switch codec {
         case .avc420:
             do {
-                content = try encodeAvc(frame, tiles: tiles, keyFrame: isFull)
-                lossyTiles.formUnion(tiles)
-                videoRefinementsLeft = Self.videoRefinementFrames
+                content = try encodeAvc(frame, keyFrame: isFull)
+                videoRefinementsLeft = quality.sharpensStillImages ? Self.videoRefinementFrames : 1
             } catch {
                 Self.logger.error("H.264 failed, switching to planar: \(String(describing: error), privacy: .public)")
                 codec = .planar
                 h264 = nil
-                lossyTiles = []
                 return encode(frame, forceFullUpdate: true)
             }
         case .planar:
@@ -99,23 +93,12 @@ final class GraphicsFrameEncoder: FrameEncoding {
         return wrapFrame(content)
     }
 
+    /// While the image is still, re-encodes it with H.264 a few times: each pass adds detail, so text gets sharp.
     func refinement() -> [[UInt8]]? {
-        guard codec == .avc420, let frame = lastFrame else { return nil }
-        if quality.sharpensStillImages {
-            guard !lossyTiles.isEmpty else { return nil }
-            framesInLastBatch = 1
-            var content: [UInt8] = []
-            for tile in lossyTiles.sorted() {
-                content += encodePlanar(frame, tiles: [tile])
-                lossyTiles.remove(tile)
-                if content.count >= Self.maximumRefinementBytes { break }
-            }
-            return wrapFrame(content)
-        }
-        guard videoRefinementsLeft > 0, !lossyTiles.isEmpty else { return nil }
+        guard codec == .avc420, videoRefinementsLeft > 0, let frame = lastFrame else { return nil }
         videoRefinementsLeft -= 1
         framesInLastBatch = 1
-        guard let content = try? encodeAvc(frame, tiles: lossyTiles, keyFrame: false) else { return nil }
+        guard let content = try? encodeAvc(frame, keyFrame: false) else { return nil }
         return wrapFrame(content)
     }
 
@@ -128,18 +111,16 @@ final class GraphicsFrameEncoder: FrameEncoding {
         return wrap(GraphicsServerPdu.startFrame(id: frameId, timestamp: timestamp) + content + GraphicsServerPdu.endFrame(id: frameId))
     }
 
-    private func encodeAvc(_ frame: ScreenFrame, tiles: Set<Int>, keyFrame: Bool) throws -> [UInt8] {
+    /// Every H.264 frame updates the whole surface. Microsoft's client does not reliably apply partial
+    /// region updates (parts of the screen stayed stale or gray), so regions are not used.
+    private func encodeAvc(_ frame: ScreenFrame, keyFrame: Bool) throws -> [UInt8] {
         if h264 == nil {
             h264 = try VideoToolboxH264Encoder(width: encodedSize.width, height: encodedSize.height, bitRate: quality.videoBitRate, framesPerSecond: quality.framesPerSecond)
         }
         guard let h264 else { return [] }
         let stream = try h264.encode(frame, forceKeyFrame: keyFrame)
-        var rectangles = grid.rectangles(covering: tiles)
-        if rectangles.count > Self.maximumRegions {
-            rectangles = [(0, 0, desktopSize.width, desktopSize.height)]
-        }
-        let regions = rectangles.map { GraphicsRectangle(left: UInt16($0.left), top: UInt16($0.top), right: UInt16($0.right), bottom: UInt16($0.bottom)) }
-        let bitmap = GraphicsServerPdu.avc420Bitmap(regions: regions, h264: stream)
+        let region = GraphicsRectangle(left: 0, top: 0, right: UInt16(desktopSize.width), bottom: UInt16(desktopSize.height))
+        let bitmap = GraphicsServerPdu.avc420Bitmap(regions: [region], h264: stream)
         let destination = GraphicsRectangle(left: 0, top: 0, right: UInt16(encodedSize.width), bottom: UInt16(encodedSize.height))
         return GraphicsServerPdu.wireToSurface(surfaceId: Self.surfaceId, codec: GraphicsCodec.avc420, destination: destination, bitmap: bitmap)
     }

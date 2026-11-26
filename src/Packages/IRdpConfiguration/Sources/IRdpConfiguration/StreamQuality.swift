@@ -17,8 +17,8 @@ public enum StreamQuality: String, Codable, CaseIterable, Sendable, Identifiable
     public var summary: String {
         switch self {
         case .low: "Slow networks: 5 Mbit/s, 20 fps, 16-bit colors without H.264."
-        case .good: "Sharp text: 15 Mbit/s, 30 fps, still images sharpened losslessly."
-        case .high: "Fast networks: 40 Mbit/s, 60 fps, still images sharpened losslessly."
+        case .good: "Balanced: 15 Mbit/s, 30 fps, still images refined for sharp text."
+        case .high: "Fast networks: 40 Mbit/s, 60 fps, still images refined for sharp text."
         }
     }
 
@@ -44,7 +44,7 @@ public enum StreamQuality: String, Codable, CaseIterable, Sendable, Identifiable
         self == .low ? 16 : 32
     }
 
-    /// Whether still images are re-sent losslessly after motion stops, which keeps text sharp.
+    /// Whether still images are refined with several extra frames after motion stops, which sharpens text.
     public var sharpensStillImages: Bool {
         self != .low
     }

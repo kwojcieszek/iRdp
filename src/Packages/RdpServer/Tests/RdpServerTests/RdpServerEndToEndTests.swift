@@ -99,7 +99,7 @@ struct RdpServerEndToEndTests {
         // Wrong password on the logon screen keeps the logon screen.
         let wrong = clientPassword.isEmpty ? typing("kamil") + pressing(0x0F) + typing("nope") + pressing(0x1C) : typing("nope") + pressing(0x1C)
         try await session.send(FastPathInputPdu.encode(wrong))
-        try await Task.sleep(for: .milliseconds(200))
+        try await Task.sleep(for: .milliseconds(600))
         #expect(observer.startedSessions.isEmpty)
         #expect(sink.events.isEmpty, "logon input never reaches the Mac")
 
