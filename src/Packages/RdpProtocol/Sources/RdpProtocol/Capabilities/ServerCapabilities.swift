@@ -24,7 +24,9 @@ public enum ServerCapabilities {
         writer.writeUInt16LE(1)
         writer.writeUInt16LE(0)
         writer.writeUInt16LE(0x0022)
-        writer.writeZeros(32)
+        var orders = [UInt8](repeating: 0, count: 32)
+        orders[2] = 1 // TS_NEG_SCRBLT_INDEX
+        writer.writeBytes(orders)
         writer.writeUInt16LE(0)
         writer.writeUInt16LE(0)
         writer.writeUInt32LE(0)

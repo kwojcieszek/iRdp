@@ -57,13 +57,17 @@ struct GraphicsFrameEncoderTests {
         return result
     }
 
-    @Test func splitsLargePlanarFramesIntoSmallFrames() throws {
+    @Test func splitsLargePlanarFrameAcrossMessages() throws {
         let encoder = GraphicsFrameEncoder(desktopSize: DesktopSize(width: 640, height: 384), codec: .planar, quality: StreamingQuality()) { [$0] }
         var pixels = [UInt8](repeating: 0, count: 640 * 384 * 4)
         for index in pixels.indices { pixels[index] = UInt8.random(in: 0...255) }
         let messages = encoder.encode(ScreenFrame(width: 640, height: 384, bytesPerRow: 2560, pixels: pixels), forceFullUpdate: true)
         #expect(messages.count > 1)
-        #expect(encoder.framesInLastBatch == messages.count)
+        #expect(encoder.framesInLastBatch == 1)
+        let allCommands = try messages.flatMap(commands)
+        #expect(allCommands.first == GraphicsCommand.startFrame.rawValue)
+        #expect(allCommands.last == GraphicsCommand.endFrame.rawValue)
+        #expect(allCommands.dropFirst().dropLast().allSatisfy { $0 == GraphicsCommand.wireToSurface1.rawValue })
         #expect(messages.allSatisfy { $0.count <= SegmentedDataLimit.single })
         #expect(try messages.reduce(0) { $0 + (try codecs($1)).count } == 60)
     }
@@ -90,6 +94,25 @@ struct GraphicsFrameEncoderTests {
         try reader.skip(6 + 5 + 8 + 4)
         #expect(try reader.readUInt32LE() == 1, "one region")
         #expect([try reader.readUInt16LE(), try reader.readUInt16LE(), try reader.readUInt16LE(), try reader.readUInt16LE()] == [0, 0, 200, 100])
+    }
+
+    @Test func avcRefreshesBottomRightPixelAt4K() throws {
+        let size = DesktopSize(width: 3840, height: 2160)
+        let encoder = GraphicsFrameEncoder(desktopSize: size, codec: .avc420, quality: StreamingQuality()) { [$0] }
+        var pixels = [UInt8](repeating: 0, count: size.width * size.height * 4)
+        func frame() -> ScreenFrame {
+            ScreenFrame(width: size.width, height: size.height, bytesPerRow: size.width * 4, pixels: pixels)
+        }
+        let initial = try #require(encoder.encode(frame(), forceFullUpdate: false).first)
+        #expect(try codecs(initial) == [GraphicsCodec.avc420])
+        #expect(encoder.encode(frame(), forceFullUpdate: false).isEmpty)
+        pixels[pixels.count - 4] = 255
+        let update = try #require(encoder.encode(frame(), forceFullUpdate: false).first)
+        #expect(try codecs(update) == [GraphicsCodec.planar])
+        var reader = ByteReader(update)
+        try reader.skip(16 + 8 + 5) // StartFrame, WireToSurface header, surface ID, codec and format.
+        #expect([try reader.readUInt16LE(), try reader.readUInt16LE(), try reader.readUInt16LE(), try reader.readUInt16LE()] == [3839, 2159, 3840, 2160])
+        #expect(try codecs(#require(encoder.encode(frame(), forceFullUpdate: true).first)) == [GraphicsCodec.avc420])
     }
 
     @Test func lowQualityRefinesOnce() {

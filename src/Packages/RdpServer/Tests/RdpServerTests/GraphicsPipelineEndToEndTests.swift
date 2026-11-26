@@ -45,12 +45,13 @@ struct GraphicsPipelineEndToEndTests {
         let setup = try await session.openGraphicsPipeline(capabilities: [GraphicsCapabilitySet(version: GraphicsCapabilitySet.version107, flags: 0)])
         #expect(setup == [GraphicsCommand.capsConfirm, .resetGraphics, .createSurface, .mapSurfaceToOutput].map(\.rawValue))
 
-        let expectedCodec = usesVideoEncoding ? GraphicsCodec.avc420 : GraphicsCodec.planar
         var frameIds: [UInt32] = []
-        for _ in 0..<2 {
+        for index in 0..<2 {
             let message = try await session.nextGraphicsMessage()
             #expect(try RdpTestClient.commands(in: message).first == GraphicsCommand.startFrame.rawValue)
-            #expect(try wireToSurfaceCodecs(message).allSatisfy { $0 == expectedCodec })
+            let expectedCodec = usesVideoEncoding && index == 0 ? GraphicsCodec.avc420 : GraphicsCodec.planar
+            let codecs = try wireToSurfaceCodecs(message)
+            #expect(!codecs.isEmpty && codecs.allSatisfy { $0 == expectedCodec })
             var reader = ByteReader(message)
             try reader.skip(12)
             frameIds.append(try reader.readUInt32LE())

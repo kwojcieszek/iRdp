@@ -31,6 +31,7 @@ final class RdpConnectionHandler: ChannelInboundHandler {
     private var resources: RdpSessionResources?
     private var desktopSize = DesktopSize(width: 0, height: 0)
     private var bitsPerPixel = 32
+    private var clientSupportsScreenCopy = false
     private var clientSupportsCompressionWithoutHeader = false
     private var pump: FrameUpdatePump?
     private var isRegistered = false
@@ -280,6 +281,9 @@ final class RdpConnectionHandler: ChannelInboundHandler {
     }
 
     private func handleConfirmActive(_ confirm: ConfirmActivePdu) throws {
+        // TS_ORDER_CAPABILITYSET body: orderFlags at 30, orderSupport at 32.
+        let orders = confirm.capability(CapabilitySetType.order)?.body ?? []
+        clientSupportsScreenCopy = orders.count >= 64 && orders[30] & 2 != 0 && orders[34] != 0
         if let bitmap = confirm.capability(CapabilitySetType.bitmap).flatMap({ try? BitmapCapability.parse($0.body) }),
            [16, 24, 32].contains(Int(bitmap.preferredBitsPerPixel)) {
             bitsPerPixel = Int(bitmap.preferredBitsPerPixel)
@@ -470,7 +474,7 @@ final class RdpConnectionHandler: ChannelInboundHandler {
         phase = .active
         send(FastPathUpdate.pdu([FastPathUpdate(code: .defaultPointer)]))
         let channel = context.channel
-        let pump = FrameUpdatePump(encoder: ScreenUpdateEncoder(bitsPerPixel: bitsPerPixel, includesCompressionHeader: !clientSupportsCompressionWithoutHeader)) { pdus, completion in
+        let pump = FrameUpdatePump(encoder: ScreenUpdateEncoder(bitsPerPixel: bitsPerPixel, includesCompressionHeader: !clientSupportsCompressionWithoutHeader, supportsScreenCopy: clientSupportsScreenCopy)) { pdus, completion in
             channel.eventLoop.execute {
                 var buffer = channel.allocator.buffer(capacity: pdus.reduce(0) { $0 + $1.count })
                 for pdu in pdus { buffer.writeBytes(pdu) }
@@ -526,7 +530,10 @@ final class RdpConnectionHandler: ChannelInboundHandler {
 
     private func startGraphicsPipelineIfSupported() {
         let earlyFlags = clientData?.core.earlyCapabilityFlags ?? 0
-        guard configuration.usesGraphicsPipeline, drdynvcChannelId != nil, earlyFlags & ClientCoreData.supportsGraphicsPipeline != 0 else { return }
+        guard configuration.usesGraphicsPipeline, drdynvcChannelId != nil, earlyFlags & ClientCoreData.supportsGraphicsPipeline != 0 else {
+            Self.logger.notice("using bitmap output: graphics enabled=\(self.configuration.usesGraphicsPipeline), drdynvc=\(self.drdynvcChannelId != nil), client flags=\(earlyFlags)")
+            return
+        }
         do {
             try handleGraphicsChannelEvents(graphicsChannel.start())
         } catch {
@@ -546,7 +553,8 @@ final class RdpConnectionHandler: ChannelInboundHandler {
             case .cacheImportOffer:
                 GraphicsChannelController.dynamicChannelPdus(forGraphicsMessage: GraphicsServerPdu.cacheImportReply()).forEach { sendStaticChannelMessage($0) }
             case .closed:
-                Self.logger.notice("graphics channel closed by the client")
+                pump?.replaceEncoder(ScreenUpdateEncoder(bitsPerPixel: bitsPerPixel, includesCompressionHeader: !clientSupportsCompressionWithoutHeader, supportsScreenCopy: clientSupportsScreenCopy))
+                Self.logger.notice("graphics channel closed, resuming bitmap updates")
             }
         }
     }

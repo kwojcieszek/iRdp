@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 
 /// Encodes frames on a private queue and keeps latency low: only the newest frame is encoded, one batch is
-/// written at a time, and with frame acknowledgements at most `maximumFramesInFlight` frames are unacknowledged.
+/// written at a time, and with frame acknowledgements at most `maximumFramesInFlight` batches (one screen update, possibly split into several frames) are unacknowledged.
 final class FrameUpdatePump: @unchecked Sendable {
     typealias Sender = @Sendable (_ packets: [[UInt8]], _ completion: @escaping @Sendable () -> Void) -> Void
 
@@ -13,6 +13,9 @@ final class FrameUpdatePump: @unchecked Sendable {
 
     private let queue = DispatchQueue(label: "com.irdp.frame-pump", qos: .userInteractive)
     private let send: Sender
+    // Capture can outpace encoding. Retain just the latest submitted image while the queue is busy.
+    private let submissionLock = NSLock()
+    private var latestSubmission: ScreenFrame?
     // State below is only accessed on `queue`.
     private var encoder: any FrameEncoding
     private var pendingFrame: ScreenFrame?
@@ -20,7 +23,8 @@ final class FrameUpdatePump: @unchecked Sendable {
     private var isPaused = false
     private var isStopped = false
     private var fullRefreshRequested = true
-    private var framesInFlight = 0
+    /// Unacknowledged frames of each batch in flight, oldest first.
+    private var batchesInFlight: [Int] = []
     private var acknowledgementsSuspended = false
     private var refinementGeneration = 0
     private var statistics = FrameStatistics()
@@ -31,8 +35,17 @@ final class FrameUpdatePump: @unchecked Sendable {
     }
 
     func submit(_ frame: ScreenFrame) {
+        let needsDelivery = submissionLock.withLock {
+            let wasEmpty = latestSubmission == nil
+            latestSubmission = frame
+            return wasEmpty
+        }
+        guard needsDelivery else { return }
         queue.async {
-            self.pendingFrame = frame
+            self.pendingFrame = self.submissionLock.withLock {
+                defer { self.latestSubmission = nil }
+                return self.latestSubmission
+            }
             self.refinementGeneration += 1
             self.processIfIdle()
         }
@@ -58,7 +71,7 @@ final class FrameUpdatePump: @unchecked Sendable {
         queue.async {
             let last = self.encoder.lastFrame
             self.encoder = newEncoder
-            self.framesInFlight = 0
+            self.batchesInFlight = []
             self.fullRefreshRequested = true
             if self.pendingFrame == nil { self.pendingFrame = last }
             self.processIfIdle()
@@ -69,7 +82,12 @@ final class FrameUpdatePump: @unchecked Sendable {
     func frameAcknowledged(suspended: Bool) {
         queue.async {
             self.acknowledgementsSuspended = suspended
-            self.framesInFlight = max(self.framesInFlight - 1, 0)
+            if suspended {
+                self.batchesInFlight = []
+            } else if !self.batchesInFlight.isEmpty {
+                self.batchesInFlight[0] -= 1
+                if self.batchesInFlight[0] <= 0 { self.batchesInFlight.removeFirst() }
+            }
             self.processIfIdle()
             if self.pendingFrame == nil, !self.isSending { self.scheduleRefinement() }
         }
@@ -88,7 +106,7 @@ final class FrameUpdatePump: @unchecked Sendable {
     }
 
     private var canSendFrame: Bool {
-        !encoder.usesFrameAcknowledgements || acknowledgementsSuspended || framesInFlight < Self.maximumFramesInFlight
+        !encoder.usesFrameAcknowledgements || acknowledgementsSuspended || batchesInFlight.count < Self.maximumFramesInFlight
     }
 
     private func processIfIdle() {
@@ -100,7 +118,7 @@ final class FrameUpdatePump: @unchecked Sendable {
         fullRefreshRequested = false
         guard !packets.isEmpty else { return }
         isSending = true
-        if encoder.usesFrameAcknowledgements { framesInFlight += encoder.framesInLastBatch }
+        if encoder.usesFrameAcknowledgements && !acknowledgementsSuspended { batchesInFlight.append(encoder.framesInLastBatch) }
         let byteCount = packets.reduce(0) { $0 + $1.count }
         let displayTime = frame.displayTime
         send(packets) { [weak self] in
@@ -124,7 +142,7 @@ final class FrameUpdatePump: @unchecked Sendable {
             guard generation == self.refinementGeneration, self.pendingFrame == nil, !self.isSending, !self.isStopped, !self.isPaused, self.canSendFrame else { return }
             guard let packets = self.encoder.refinement(), !packets.isEmpty else { return }
             self.isSending = true
-            if self.encoder.usesFrameAcknowledgements { self.framesInFlight += self.encoder.framesInLastBatch }
+            if self.encoder.usesFrameAcknowledgements && !self.acknowledgementsSuspended { self.batchesInFlight.append(self.encoder.framesInLastBatch) }
             self.send(packets) { [weak self] in
                 guard let self else { return }
                 self.queue.async {

@@ -14,11 +14,13 @@ final class VideoToolboxH264Encoder {
     let width: Int
     let height: Int
     private var session: VTCompressionSession?
-    private var frameNumber: Int64 = 0
+    private var nextTimestamp = CMTime.zero
+    private var framesPerSecond: Int
     private static let startCode: [UInt8] = [0, 0, 0, 1]
 
     /// `width` and `height` are the encoded size and should be multiples of 16.
     init(width: Int, height: Int, bitRate: Int, framesPerSecond: Int) throws {
+        self.framesPerSecond = framesPerSecond
         self.width = width
         self.height = height
         // Plain hardware real-time encoding. The low-latency rate control mode is not used: it produces long-term
@@ -47,7 +49,7 @@ final class VideoToolboxH264Encoder {
             kVTCompressionPropertyKey_AllowFrameReordering: false,
             kVTCompressionPropertyKey_AverageBitRate: bitRate,
             kVTCompressionPropertyKey_ExpectedFrameRate: framesPerSecond,
-            kVTCompressionPropertyKey_MaxKeyFrameInterval: 3600,
+            kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration: 2,
             kVTCompressionPropertyKey_MaxFrameDelayCount: 0,
         ]
         for (key, value) in properties {
@@ -58,6 +60,7 @@ final class VideoToolboxH264Encoder {
 
     /// Changes the bit rate of the running session.
     func setBitRate(_ bitRate: Int, framesPerSecond: Int) {
+        self.framesPerSecond = framesPerSecond
         guard let session else { return }
         VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AverageBitRate, value: bitRate as CFNumber)
         VTSessionSetProperty(session, key: kVTCompressionPropertyKey_ExpectedFrameRate, value: framesPerSecond as CFNumber)
@@ -75,18 +78,19 @@ final class VideoToolboxH264Encoder {
         guard let pixelBuffer else { throw H264EncoderError.noPixelBuffer }
         copy(frame, into: pixelBuffer)
 
-        let timestamp = CMTime(value: frameNumber, timescale: 600)
-        frameNumber += 10
+        let timestamp = nextTimestamp
+        let duration = CMTime(value: 1, timescale: CMTimeScale(max(1, framesPerSecond)))
+        nextTimestamp = CMTimeAdd(timestamp, duration)
         let box = OutputBox()
         let options: CFDictionary? = forceKeyFrame ? [kVTEncodeFrameOptionKey_ForceKeyFrame: true] as CFDictionary : nil
-        let status = VTCompressionSessionEncodeFrame(session, imageBuffer: pixelBuffer, presentationTimeStamp: timestamp, duration: .invalid, frameProperties: options, infoFlagsOut: nil) { status, _, sample in
+        let status = VTCompressionSessionEncodeFrame(session, imageBuffer: pixelBuffer, presentationTimeStamp: timestamp, duration: duration, frameProperties: options, infoFlagsOut: nil) { status, _, sample in
             box.status = status
             box.sample = sample
         }
         guard status == noErr else { throw H264EncoderError.encodingFailed(status) }
         VTCompressionSessionCompleteFrames(session, untilPresentationTimeStamp: timestamp)
         guard box.status == noErr, let sample = box.sample else { throw H264EncoderError.encodingFailed(box.status) }
-        return Self.annexB(from: sample)
+        return try Self.annexB(from: sample)
     }
 
     private func copy(_ frame: ScreenFrame, into pixelBuffer: CVPixelBuffer) {
@@ -107,7 +111,7 @@ final class VideoToolboxH264Encoder {
         if rows < height { memset(base + rows * stride, 0, (height - rows) * stride) }
     }
 
-    static func annexB(from sample: CMSampleBuffer) -> [UInt8] {
+    static func annexB(from sample: CMSampleBuffer) throws -> [UInt8] {
         var output: [UInt8] = []
         let attachments = CMSampleBufferGetSampleAttachmentsArray(sample, createIfNecessary: false) as? [[CFString: Any]]
         let isKeyFrame = !((attachments?.first?[kCMSampleAttachmentKey_NotSync] as? Bool) ?? false)
@@ -123,20 +127,25 @@ final class VideoToolboxH264Encoder {
                 }
             }
         }
-        guard let dataBuffer = CMSampleBufferGetDataBuffer(sample) else { return output }
-        var totalLength = 0
-        var pointer: UnsafeMutablePointer<CChar>?
-        guard CMBlockBufferGetDataPointer(dataBuffer, atOffset: 0, lengthAtOffsetOut: nil, totalLengthOut: &totalLength, dataPointerOut: &pointer) == noErr, let pointer else { return output }
-        let bytes = UnsafeRawPointer(pointer).assumingMemoryBound(to: UInt8.self)
+        guard let dataBuffer = CMSampleBufferGetDataBuffer(sample) else { throw H264EncoderError.invalidSample }
+        let totalLength = CMBlockBufferGetDataLength(dataBuffer)
+        guard totalLength > 0 else { throw H264EncoderError.invalidSample }
+        var bytes = [UInt8](repeating: 0, count: totalLength)
+        let status = bytes.withUnsafeMutableBytes {
+            CMBlockBufferCopyDataBytes(dataBuffer, atOffset: 0, dataLength: totalLength, destination: $0.baseAddress!)
+        }
+        guard status == noErr else { throw H264EncoderError.encodingFailed(status) }
+        output.reserveCapacity(output.count + totalLength)
         var offset = 0
         while offset + 4 <= totalLength {
             let length = Int(bytes[offset]) << 24 | Int(bytes[offset + 1]) << 16 | Int(bytes[offset + 2]) << 8 | Int(bytes[offset + 3])
             offset += 4
-            guard length > 0, offset + length <= totalLength else { break }
+            guard length > 0, offset + length <= totalLength else { throw H264EncoderError.invalidSample }
             output += startCode
-            output += UnsafeBufferPointer(start: bytes + offset, count: length)
+            output.append(contentsOf: bytes[offset..<(offset + length)])
             offset += length
         }
+        guard offset == totalLength else { throw H264EncoderError.invalidSample }
         return output
     }
 }

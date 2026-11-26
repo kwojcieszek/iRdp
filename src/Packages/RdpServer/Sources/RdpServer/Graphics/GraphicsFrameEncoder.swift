@@ -18,6 +18,7 @@ final class GraphicsFrameEncoder: FrameEncoding {
     private let wrap: ([UInt8]) -> [[UInt8]]
     private(set) var quality: StreamingQuality
     private let grid: TileGrid
+    private var needsVideoKeyFrame = false
     private var h264: VideoToolboxH264Encoder?
     private var nextFrameId: UInt32 = 1
     private let startTime = Date()
@@ -42,7 +43,7 @@ final class GraphicsFrameEncoder: FrameEncoding {
     func setupMessage(confirming capabilities: GraphicsCapabilitySet) -> [UInt8] {
         GraphicsServerPdu.capsConfirm(capabilities)
             + GraphicsServerPdu.resetGraphics(width: desktopSize.width, height: desktopSize.height)
-            + GraphicsServerPdu.createSurface(id: Self.surfaceId, width: encodedSize.width, height: encodedSize.height)
+            + GraphicsServerPdu.createSurface(id: Self.surfaceId, width: desktopSize.width, height: desktopSize.height)
             + GraphicsServerPdu.mapSurfaceToOutput(id: Self.surfaceId)
     }
 
@@ -53,15 +54,27 @@ final class GraphicsFrameEncoder: FrameEncoding {
 
     func encode(_ frame: ScreenFrame, forceFullUpdate: Bool) -> [[UInt8]] {
         let previous = lastFrame
-        let isFull = forceFullUpdate || previous == nil || previous?.size != frame.size || frame.size != desktopSize
-        let tiles: Set<Int> = if isFull { grid.allTiles } else if let previous { grid.changedTiles(frame, comparedTo: previous) } else { grid.allTiles }
+        let isFull = forceFullUpdate || previous == nil || previous?.size != frame.size || previous?.bytesPerRow != frame.bytesPerRow || frame.size != desktopSize
         lastFrame = frame
-        guard !tiles.isEmpty else { return [] }
         let content: [UInt8]
         switch codec {
         case .avc420:
+            if !isFull, let previous {
+                // Keep the video decoder reference chain intact. Small edits can be painted losslessly
+                // between video frames, and the next AVC update covers the entire desktop.
+                let limit = 5
+                let tiles = grid.changedTiles(frame, comparedTo: previous, stoppingAfter: limit)
+                guard !tiles.isEmpty else { return [] }
+                if tiles.count < limit {
+                    videoRefinementsLeft = 0
+                    framesInLastBatch = 1
+                    needsVideoKeyFrame = true
+                    return wrapFrame(encodePlanar(frame, tiles: tiles, comparedTo: previous))
+                }
+            }
             do {
-                content = try encodeAvc(frame, keyFrame: isFull)
+                content = try encodeAvc(frame, keyFrame: isFull || needsVideoKeyFrame)
+                needsVideoKeyFrame = false
                 videoRefinementsLeft = quality.sharpensStillImages ? Self.videoRefinementFrames : 1
             } catch {
                 Self.logger.error("H.264 failed, switching to planar: \(String(describing: error), privacy: .public)")
@@ -70,23 +83,24 @@ final class GraphicsFrameEncoder: FrameEncoding {
                 return encode(frame, forceFullUpdate: true)
             }
         case .planar:
-            // Lossless tiles go out as several small frames, so no RDPGFX message needs more than one segment.
+            let tiles = isFull ? grid.allTiles : grid.changedTiles(frame, comparedTo: previous!)
+            guard !tiles.isEmpty else { return [] }
+            // A desktop update has one presentation boundary and one acknowledgement. Transport
+            // batches contain whole graphics PDUs and can be decoded as they arrive.
+            let frameId = nextFrameId
+            var batch = beginFrame()
             var packets: [[UInt8]] = []
-            var batch: [UInt8] = []
-            var frames = 0
             for tile in tiles.sorted() {
-                batch += encodePlanar(frame, tiles: [tile])
-                if batch.count >= Self.maximumRefinementBytes {
-                    packets += wrapFrame(batch)
-                    frames += 1
-                    batch = []
+                let command = encodePlanar(frame, tiles: [tile])
+                if batch.count + command.count > Self.maximumRefinementBytes {
+                    packets += wrap(batch)
+                    batch.removeAll(keepingCapacity: true)
                 }
+                batch += command
             }
-            if !batch.isEmpty {
-                packets += wrapFrame(batch)
-                frames += 1
-            }
-            framesInLastBatch = frames
+            batch += GraphicsServerPdu.endFrame(id: frameId)
+            packets += wrap(batch)
+            framesInLastBatch = 1
             return packets
         }
         framesInLastBatch = 1
@@ -105,10 +119,15 @@ final class GraphicsFrameEncoder: FrameEncoding {
     private func wrapFrame(_ content: [UInt8]) -> [[UInt8]] {
         guard !content.isEmpty else { return [] }
         let frameId = nextFrameId
+        return wrap(beginFrame() + content + GraphicsServerPdu.endFrame(id: frameId))
+    }
+
+    private func beginFrame() -> [UInt8] {
+        let frameId = nextFrameId
         nextFrameId &+= 1
         lastFrameId = frameId
         let timestamp = UInt32(truncatingIfNeeded: Int(Date().timeIntervalSince(startTime) * 1000))
-        return wrap(GraphicsServerPdu.startFrame(id: frameId, timestamp: timestamp) + content + GraphicsServerPdu.endFrame(id: frameId))
+        return GraphicsServerPdu.startFrame(id: frameId, timestamp: timestamp)
     }
 
     /// Every H.264 frame updates the whole surface. Microsoft's client does not reliably apply partial
@@ -121,19 +140,23 @@ final class GraphicsFrameEncoder: FrameEncoding {
         let stream = try h264.encode(frame, forceKeyFrame: keyFrame)
         let region = GraphicsRectangle(left: 0, top: 0, right: UInt16(desktopSize.width), bottom: UInt16(desktopSize.height))
         let bitmap = GraphicsServerPdu.avc420Bitmap(regions: [region], h264: stream)
-        let destination = GraphicsRectangle(left: 0, top: 0, right: UInt16(encodedSize.width), bottom: UInt16(encodedSize.height))
-        return GraphicsServerPdu.wireToSurface(surfaceId: Self.surfaceId, codec: GraphicsCodec.avc420, destination: destination, bitmap: bitmap)
+        return GraphicsServerPdu.wireToSurface(surfaceId: Self.surfaceId, codec: GraphicsCodec.avc420, destination: region, bitmap: bitmap)
     }
 
     /// Lossless planar tiles (top-down rows, as the graphics pipeline expects).
-    private func encodePlanar(_ frame: ScreenFrame, tiles: Set<Int>) -> [UInt8] {
+    private func encodePlanar(_ frame: ScreenFrame, tiles: Set<Int>, comparedTo previous: ScreenFrame? = nil) -> [UInt8] {
         var output: [UInt8] = []
         frame.pixels.withUnsafeBytes { current in
             for index in tiles.sorted() {
                 let tile = grid.frame(ofTile: index)
                 guard tile.width > 0, tile.height > 0, tile.left + tile.width <= frame.width, tile.top + tile.height <= frame.height else { continue }
-                let planar = PlanarBitmapEncoder.encode(source: current, bytesPerRow: frame.bytesPerRow, left: tile.left, top: tile.top, width: tile.width, height: tile.height, topDown: true)
-                let destination = GraphicsRectangle(left: UInt16(tile.left), top: UInt16(tile.top), right: UInt16(tile.left + tile.width), bottom: UInt16(tile.top + tile.height))
+                var bounds = (x: tile.left, y: tile.top, width: tile.width, height: tile.height)
+                if let previous {
+                    guard let changed = ScreenUpdateEncoder.changedBounds(current, previous, stride: frame.bytesPerRow, tile: bounds) else { continue }
+                    bounds = changed
+                }
+                let planar = PlanarBitmapEncoder.encode(source: current, bytesPerRow: frame.bytesPerRow, left: bounds.x, top: bounds.y, width: bounds.width, height: bounds.height, topDown: true)
+                let destination = GraphicsRectangle(left: UInt16(bounds.x), top: UInt16(bounds.y), right: UInt16(bounds.x + bounds.width), bottom: UInt16(bounds.y + bounds.height))
                 output += GraphicsServerPdu.wireToSurface(surfaceId: Self.surfaceId, codec: GraphicsCodec.planar, destination: destination, bitmap: planar)
             }
         }

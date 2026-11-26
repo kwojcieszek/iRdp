@@ -22,13 +22,14 @@ struct TileGrid: Equatable {
     }
 
     /// Tiles whose pixels differ between two frames of this size.
-    func changedTiles(_ frame: ScreenFrame, comparedTo previous: ScreenFrame) -> Set<Int> {
+    func changedTiles(_ frame: ScreenFrame, comparedTo previous: ScreenFrame, stoppingAfter limit: Int = .max) -> Set<Int> {
         var changed = Set<Int>()
         frame.pixels.withUnsafeBytes { current in
             for index in 0..<(columns * rows) {
                 let tile = self.frame(ofTile: index)
                 if ScreenUpdateEncoder.tileChanged(current, previous, frame: frame, left: tile.left, top: tile.top, width: tile.width, height: tile.height) {
                     changed.insert(index)
+                    if changed.count >= limit { break }
                 }
             }
         }
