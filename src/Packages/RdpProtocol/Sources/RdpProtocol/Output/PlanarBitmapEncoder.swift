@@ -7,17 +7,36 @@ public enum PlanarBitmapEncoder {
     /// Scanlines are stored bottom-up as in bitmap updates, or top-down for the graphics pipeline.
     public static func encode(bgrx pixels: [UInt8], width: Int, height: Int, topDown: Bool = false) -> [UInt8] {
         precondition(pixels.count >= width * height * 4, "pixel buffer too small")
+        return pixels.withUnsafeBytes { encode(source: $0, bytesPerRow: width * 4, left: 0, top: 0, width: width, height: height, topDown: topDown) }
+    }
+
+    /// Encodes a rectangle of a BGRX image directly from its buffer, without copying the pixels first.
+    public static func encode(source: UnsafeRawBufferPointer, bytesPerRow: Int, left: Int, top: Int, width: Int, height: Int, topDown: Bool) -> [UInt8] {
         var output: [UInt8] = [formatHeader]
-        output.reserveCapacity(width * height + 1)
+        output.reserveCapacity(width * height + 64)
+        guard let base = source.baseAddress?.assumingMemoryBound(to: UInt8.self), width > 0, height > 0 else { return output }
+        var previous = [UInt8](repeating: 0, count: width)
+        var line = [UInt8](repeating: 0, count: width)
         for channel in [2, 1, 0] {
-            var plane = [UInt8](repeating: 0, count: width * height)
             for row in 0..<height {
-                let sourceRow = topDown ? row : height - 1 - row
-                for column in 0..<width {
-                    plane[row * width + column] = pixels[(sourceRow * width + column) * 4 + channel]
+                let sourceRow = topDown ? top + row : top + height - 1 - row
+                let rowStart = base + sourceRow * bytesPerRow + left * 4 + channel
+                previous.withUnsafeMutableBufferPointer { previousValues in
+                    line.withUnsafeMutableBufferPointer { values in
+                        for column in 0..<width {
+                            let value = rowStart[column * 4]
+                            if row == 0 {
+                                values[column] = value
+                            } else {
+                                let delta = Int8(truncatingIfNeeded: Int(value) &- Int(previousValues[column]))
+                                values[column] = delta >= 0 ? UInt8(delta) &* 2 : UInt8(truncatingIfNeeded: -Int(delta) * 2 - 1)
+                            }
+                            previousValues[column] = value
+                        }
+                    }
                 }
+                encodeScanline(line, into: &output)
             }
-            encodePlane(plane, width: width, height: height, into: &output)
         }
         return output
     }
@@ -41,30 +60,37 @@ public enum PlanarBitmapEncoder {
 
     /// Encodes one scanline as RDP6_RLE_SEGMENTS. A run repeats the previous value of the scanline (initially zero).
     static func encodeScanline(_ values: [UInt8], into output: inout [UInt8]) {
-        var raw: [UInt8] = []
-        var last: UInt8 = 0
-        var index = 0
-        while index < values.count {
-            var run = 0
-            while index + run < values.count, values[index + run] == last { run += 1 }
-            if run >= 3 {
-                emitSegment(raw: raw, run: run, repeating: last, into: &output)
-                raw.removeAll(keepingCapacity: true)
-                index += run
-                continue
+        values.withUnsafeBufferPointer { values in
+            var rawStart = 0
+            var rawCount = 0
+            var last: UInt8 = 0
+            var index = 0
+            let count = values.count
+            while index < count {
+                var run = 0
+                while index + run < count, values[index + run] == last { run += 1 }
+                if run >= 3 {
+                    emitSegment(raw: values[rawStart..<rawStart + rawCount], run: run, repeating: last, into: &output)
+                    rawCount = 0
+                    index += run
+                    rawStart = index
+                    continue
+                }
+                if rawCount == 0 { rawStart = index }
+                last = values[index]
+                rawCount += 1
+                index += 1
+                if rawCount == 15 {
+                    emitSegment(raw: values[rawStart..<rawStart + rawCount], run: 0, repeating: last, into: &output)
+                    rawCount = 0
+                    rawStart = index
+                }
             }
-            raw.append(values[index])
-            last = values[index]
-            index += 1
-            if raw.count == 15 {
-                emitSegment(raw: raw, run: 0, repeating: last, into: &output)
-                raw.removeAll(keepingCapacity: true)
-            }
+            if rawCount > 0 { emitSegment(raw: values[rawStart..<rawStart + rawCount], run: 0, repeating: last, into: &output) }
         }
-        if !raw.isEmpty { emitSegment(raw: raw, run: 0, repeating: last, into: &output) }
     }
 
-    private static func emitSegment(raw: [UInt8], run: Int, repeating value: UInt8, into output: inout [UInt8]) {
+    private static func emitSegment(raw: Slice<UnsafeBufferPointer<UInt8>>, run: Int, repeating value: UInt8, into output: inout [UInt8]) {
         let firstRun = run >= 3 ? min(run, 15) : 0
         if !raw.isEmpty || firstRun > 0 {
             output.append(UInt8(raw.count << 4 | firstRun))

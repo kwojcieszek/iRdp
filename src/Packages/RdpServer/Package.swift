@@ -26,7 +26,9 @@ let package = Package(
                 .product(name: "Crypto", package: "swift-crypto"),
                 .product(name: "_CryptoExtras", package: "swift-crypto"),
                 .product(name: "SwiftASN1", package: "swift-asn1"),
-            ]
+            ],
+            // Encoding runs per pixel; keep it optimized even in Debug builds (e.g. when running from Xcode).
+            swiftSettings: [.unsafeFlags(["-O"], .when(configuration: .debug))]
         ),
         .testTarget(
             name: "RdpServerTests",

@@ -151,12 +151,7 @@ final class GraphicsFrameEncoder: FrameEncoding {
             for index in tiles.sorted() {
                 let tile = grid.frame(ofTile: index)
                 guard tile.width > 0, tile.height > 0, tile.left + tile.width <= frame.width, tile.top + tile.height <= frame.height else { continue }
-                var pixels: [UInt8] = []
-                pixels.reserveCapacity(tile.width * tile.height * 4)
-                for row in tile.top..<(tile.top + tile.height) {
-                    PixelFormatConverter.appendRow(from: current, offset: row * frame.bytesPerRow + tile.left * 4, count: tile.width, bitsPerPixel: 32, to: &pixels)
-                }
-                let planar = PlanarBitmapEncoder.encode(bgrx: pixels, width: tile.width, height: tile.height, topDown: true)
+                let planar = PlanarBitmapEncoder.encode(source: current, bytesPerRow: frame.bytesPerRow, left: tile.left, top: tile.top, width: tile.width, height: tile.height, topDown: true)
                 let destination = GraphicsRectangle(left: UInt16(tile.left), top: UInt16(tile.top), right: UInt16(tile.left + tile.width), bottom: UInt16(tile.top + tile.height))
                 output += GraphicsServerPdu.wireToSurface(surfaceId: Self.surfaceId, codec: GraphicsCodec.planar, destination: destination, bitmap: planar)
             }

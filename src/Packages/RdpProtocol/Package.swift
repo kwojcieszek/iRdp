@@ -7,7 +7,8 @@ let package = Package(
     platforms: [.macOS(.v15)],
     products: [.library(name: "RdpProtocol", targets: ["RdpProtocol"])],
     targets: [
-        .target(name: "RdpProtocol"),
+        // Encoding runs per pixel; keep it optimized even in Debug builds (e.g. when running from Xcode).
+        .target(name: "RdpProtocol", swiftSettings: [.unsafeFlags(["-O"], .when(configuration: .debug))]),
         .testTarget(name: "RdpProtocolTests", dependencies: ["RdpProtocol"]),
     ],
     swiftLanguageModes: [.v6]

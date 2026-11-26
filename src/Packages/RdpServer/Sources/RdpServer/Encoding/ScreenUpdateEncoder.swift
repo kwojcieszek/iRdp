@@ -69,19 +69,15 @@ public final class ScreenUpdateEncoder: FrameEncoding {
             bitsPerPixel: UInt16(bitsPerPixel), data: []
         )
         if usesPlanarCompression {
-            var tile: [UInt8] = []
-            tile.reserveCapacity(paddedWidth * height * 4)
-            for row in top..<(top + height) {
-                PixelFormatConverter.appendRow(from: source, offset: row * frame.bytesPerRow + left * 4, count: width, bitsPerPixel: 32, to: &tile)
-                if paddedWidth > width { tile.append(contentsOf: repeatElement(0, count: (paddedWidth - width) * 4)) }
-            }
-            let compressed = PlanarBitmapEncoder.encode(bgrx: tile, width: paddedWidth, height: height)
+            // Padding columns (to a multiple of four pixels) are left out; the planar data covers the real width.
+            rectangle.width = UInt16(width)
+            let compressed = PlanarBitmapEncoder.encode(source: source, bytesPerRow: frame.bytesPerRow, left: left, top: top, width: width, height: height, topDown: false)
             if includesCompressionHeader {
                 var header = ByteWriter(capacity: 8 + compressed.count)
                 header.writeUInt16LE(0)
                 header.writeUInt16LE(UInt16(compressed.count))
-                header.writeUInt16LE(UInt16(paddedWidth * 4))
-                header.writeUInt16LE(UInt16(truncatingIfNeeded: paddedWidth * height * 4))
+                header.writeUInt16LE(UInt16(width * 4))
+                header.writeUInt16LE(UInt16(truncatingIfNeeded: width * height * 4))
                 header.writeBytes(compressed)
                 rectangle.data = header.bytes
                 rectangle.flags = BitmapRectangle.compressionFlag

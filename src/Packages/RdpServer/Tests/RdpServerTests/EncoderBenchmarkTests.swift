@@ -31,6 +31,14 @@ struct EncoderBenchmarkTests {
         print("BENCH \(label): \(String(format: "%.1f", ms)) ms, \(bytes / 1024) KiB")
     }
 
+    @Test func fourKPlanarSpeed() {
+        let frame = Self.desktopLikeFrame(width: 3840, height: 2160, seed: 0)
+        measure("4K graphics pipeline planar", iterations: 3) {
+            GraphicsFrameEncoder(desktopSize: DesktopSize(width: 3840, height: 2160), codec: .planar, quality: StreamingQuality()) { [$0] }
+                .encode(frame, forceFullUpdate: true).reduce(0) { $0 + $1.count }
+        }
+    }
+
     @Test func encoderSpeed() {
         let first = Self.desktopLikeFrame(width: 1920, height: 1080, seed: 0)
         let second = Self.desktopLikeFrame(width: 1920, height: 1080, seed: 1)
