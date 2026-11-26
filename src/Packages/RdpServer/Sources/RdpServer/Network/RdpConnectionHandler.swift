@@ -188,11 +188,15 @@ final class RdpConnectionHandler: ChannelInboundHandler {
             if !isLockedOut, usesClientCredentials, isValid || !credentials.password.isEmpty {
                 if isValid { throttle.recordSuccess(address) } else { throttle.recordFailure(address) }
             }
-            let result: Result<RdpSessionResources, any Error>
-            do {
-                result = .success(try await environment.makeSessionResources())
-            } catch {
-                result = .failure(error)
+            let result: SessionResourcesOutcome
+            if !isValid, let desktopSize = environment.desktopSize {
+                result = .deferred(desktopSize() ?? DesktopSize(width: 1920, height: 1080))
+            } else {
+                do {
+                    result = .ready(try await environment.makeSessionResources())
+                } catch {
+                    result = .failed(error)
+                }
             }
             eventLoop.execute {
                 bound.value.authenticationFinished(isValid: isValid, isLockedOut: isLockedOut, resources: result)
@@ -200,14 +204,14 @@ final class RdpConnectionHandler: ChannelInboundHandler {
         }
     }
 
-    private func authenticationFinished(isValid: Bool, isLockedOut: Bool, resources result: Result<RdpSessionResources, any Error>) {
+    private func authenticationFinished(isValid: Bool, isLockedOut: Bool, resources result: SessionResourcesOutcome) {
         guard phase == .authenticating else {
-            if case .success(let resources) = result { Task { await resources.frameSource.stop() } }
+            if case .ready(let resources) = result { Task { await resources.frameSource.stop() } }
             return
         }
         sendMcs(.sendDataIndication(userId: userId, channelId: McsChannel.ioChannelId, data: LicenseErrorMessage.validClient()))
         guard !isLockedOut else {
-            if case .success(let resources) = result { Task { await resources.frameSource.stop() } }
+            if case .ready(let resources) = result { Task { await resources.frameSource.stop() } }
             disconnect(errorInfo: SetErrorInfoPdu.serverDeniedConnection, reason: "too many failed logins")
             return
         }
@@ -216,18 +220,14 @@ final class RdpConnectionHandler: ChannelInboundHandler {
             Self.logger.notice("\(self.clientInfo?.userName ?? "", privacy: .public) from \(self.remoteAddress, privacy: .public) signed in with credentials sent by the client")
         }
         switch result {
-        case .success(let resources):
+        case .ready(let resources):
             self.resources = resources
             desktopSize = resources.frameSource.desktopSize
-            if !isValid {
-                let userName = clientInfo?.userName ?? ""
-                let password = clientInfo?.password ?? ""
-                Self.logger.notice("credentials of \(userName, privacy: .public) from \(self.remoteAddress, privacy: .public) not accepted, showing logon screen")
-                let suggested = environment.logonAppearance().defaultUserName ?? ""
-                let showsError = !password.isEmpty && !configuration.alwaysShowsLogonScreen
-                logonForm = LogonForm(userName: userName.isEmpty ? suggested : userName, message: showsError ? "The user name or password is incorrect." : nil)
-            }
-        case .failure(let error):
+            if !isValid { showLogonScreen() }
+        case .deferred(let size):
+            desktopSize = size
+            showLogonScreen()
+        case .failed(let error):
             Self.logger.error("cannot share the screen with \(self.remoteAddress, privacy: .public): \(String(describing: error), privacy: .public)")
             environment.observer?.connectionDidFail(remoteAddress: remoteAddress, reason: "cannot share the screen: \(error)")
             desktopSize = clientDesktopSize()
@@ -238,6 +238,15 @@ final class RdpConnectionHandler: ChannelInboundHandler {
         let capabilities = ServerCapabilities.make(desktopWidth: UInt16(desktopSize.width), desktopHeight: UInt16(desktopSize.height), bitsPerPixel: UInt16(bitsPerPixel))
         sendShareControl(.demandActive, body: DemandActivePdu(shareId: Self.shareId, capabilities: capabilities).encode())
         phase = .awaitingConfirmActive
+    }
+
+    private func showLogonScreen() {
+        let userName = clientInfo?.userName ?? ""
+        let password = clientInfo?.password ?? ""
+        Self.logger.notice("credentials of \(userName, privacy: .public) from \(self.remoteAddress, privacy: .public) not accepted, showing logon screen")
+        let suggested = environment.logonAppearance().defaultUserName ?? ""
+        let showsError = !password.isEmpty && !configuration.alwaysShowsLogonScreen
+        logonForm = LogonForm(userName: userName.isEmpty ? suggested : userName, message: showsError ? "The user name or password is incorrect." : nil)
     }
 
     private func clientDesktopSize() -> DesktopSize {
@@ -381,10 +390,12 @@ final class RdpConnectionHandler: ChannelInboundHandler {
         guard phase == .active, logonForm != nil else { return }
         if isValid {
             isAuthenticated = true
-            logonForm = nil
-            logonRenderer = nil
             clientInfo?.userName = userName
-            startDesktop()
+            if resources != nil {
+                finishLogon()
+            } else {
+                prepareResourcesAfterLogon()
+            }
             return
         }
         Self.logger.notice("logon screen: credentials of \(userName, privacy: .public) from \(self.remoteAddress, privacy: .public) rejected")
@@ -404,10 +415,55 @@ final class RdpConnectionHandler: ChannelInboundHandler {
         renderLogonScreen()
     }
 
+    private func finishLogon() {
+        logonForm = nil
+        logonRenderer = nil
+        startDesktop()
+    }
+
+    /// Creates screen capture and input only now that the user is authenticated.
+    private func prepareResourcesAfterLogon() {
+        guard let context else { return }
+        let environment = environment
+        let bound = NIOLoopBound(self, eventLoop: context.eventLoop)
+        let eventLoop = context.eventLoop
+        Task {
+            let outcome: SessionResourcesOutcome
+            do {
+                outcome = .ready(try await environment.makeSessionResources())
+            } catch {
+                outcome = .failed(error)
+            }
+            eventLoop.execute { bound.value.resourcesPreparedAfterLogon(outcome) }
+        }
+    }
+
+    private func resourcesPreparedAfterLogon(_ outcome: SessionResourcesOutcome) {
+        guard phase == .active, isAuthenticated else {
+            if case .ready(let resources) = outcome { Task { await resources.frameSource.stop() } }
+            return
+        }
+        switch outcome {
+        case .ready(let resources):
+            if resources.frameSource.desktopSize != desktopSize {
+                Self.logger.warning("desktop size changed during logon: \(resources.frameSource.desktopSize.width)x\(resources.frameSource.desktopSize.height)")
+            }
+            self.resources = resources
+            finishLogon()
+        case .failed(let error):
+            environment.observer?.connectionDidFail(remoteAddress: remoteAddress, reason: "cannot share the screen: \(error)")
+            logonForm = .messageOnly("iRdp cannot share the screen: \(error). Grant the permission on the Mac and connect again.")
+            renderLogonScreen()
+        case .deferred:
+            break
+        }
+    }
+
     // MARK: - Active session
 
     private func activate() {
         guard let context, resources != nil || logonForm != nil else { return }
+        // Before login only the logon screen exists; real frames come from the capture started in startDesktop().
         phase = .active
         send(FastPathUpdate.pdu([FastPathUpdate(code: .defaultPointer)]))
         let channel = context.channel

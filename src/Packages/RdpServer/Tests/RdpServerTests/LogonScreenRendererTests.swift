@@ -12,10 +12,10 @@ struct LogonScreenRendererTests {
     }
 
     @Test func rendersFrameOfRequestedSize() {
-        let frame = LogonScreenRenderer(size: size, appearance: LogonScreenAppearance(defaultUserName: "kamil", displayName: "Kamil")).render(LogonForm(userName: "kamil"))
+        let frame = LogonScreenRenderer(size: size, appearance: LogonScreenAppearance(defaultUserName: "kamil", serverName: "Mac")).render(LogonForm(userName: "kamil"))
         #expect(frame.width == 640 && frame.height == 480)
         #expect(frame.pixels.count == 640 * 480 * 4)
-        #expect(pixel(frame, x: 0, y: 0) != pixel(frame, x: 320, y: 300), "the avatar is drawn over the background")
+        #expect(pixel(frame, x: 0, y: 0) != pixel(frame, x: 320, y: 300), "the glass card is drawn over the background")
     }
 
     @Test func typedTextChangesTheImage() {

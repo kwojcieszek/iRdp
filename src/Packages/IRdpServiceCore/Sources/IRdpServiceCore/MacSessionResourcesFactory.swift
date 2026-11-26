@@ -23,6 +23,12 @@ public struct MacSessionResourcesFactory: Sendable {
         self.resources = resources
     }
 
+    /// Size of the shared desktop, computed without creating any screen capture (used for the logon screen).
+    public func desktopSize() -> DesktopSize? {
+        guard let display = DisplayCatalog.display(withID: resources.displayID) else { return nil }
+        return CaptureGeometry(display: display, resolution: resources.resolution).desktopSize
+    }
+
     public func makeResources() throws -> RdpSessionResources {
         guard PermissionChecker.isScreenRecordingGranted else { throw FactoryError.screenRecordingNotGranted }
         guard let display = DisplayCatalog.display(withID: resources.displayID) else { throw FactoryError.noDisplay }

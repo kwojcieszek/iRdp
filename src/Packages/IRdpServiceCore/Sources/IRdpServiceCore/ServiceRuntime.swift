@@ -57,15 +57,6 @@ public actor ServiceRuntime {
         return left == right && lhs.sharedResources.quality != rhs.sharedResources.quality
     }
 
-    /// The account the logon screen suggests: the logged-in user for macOS accounts, the iRdp user otherwise.
-    static func suggestedAccount(for settings: ServerSettings) -> (userName: String?, displayName: String?) {
-        switch settings.loginMode {
-        case .macOSAccount: (NSUserName(), NSFullUserName())
-        case .applicationPassword: (settings.applicationUserName, settings.applicationUserName)
-        case .none: (nil, nil)
-        }
-    }
-
     func applySettingsIfNeeded() async {
         let settings = settingsStore.load()
         guard settings != appliedSettings else { return }
@@ -105,10 +96,8 @@ public actor ServiceRuntime {
                     return try factory.makeResources()
                 },
                 observer: reporter,
-                logonAppearance: {
-                    let suggested = Self.suggestedAccount(for: settings)
-                    return LogonAppearanceProvider.appearance(userName: suggested.userName, displayName: suggested.displayName, displayID: settings.sharedResources.displayID, serverName: Host.current().localizedName)
-                }
+                logonAppearance: { LogonScreenAppearance(serverName: Host.current().localizedName) },
+                desktopSize: { factory.desktopSize() }
             )
             let server = RdpServer(configuration: configuration, environment: environment)
             let port = try await server.start()

@@ -15,7 +15,7 @@ public final class LogonScreenRenderer {
         self.size = size
         self.appearance = appearance
         self.now = now
-        background = Self.blurredBackground(appearance.wallpaper, size: size)
+        background = Self.blurredBackground(appearance.wallpaper ?? Self.abstractBackground(), size: size)
     }
 
     public func render(_ form: LogonForm) -> ScreenFrame {
@@ -47,45 +47,80 @@ public final class LogonScreenRenderer {
         let scale = max(min(height / 1080, width / 1920), 0.6)
         let white = CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1)
         let date = now()
-        drawCentered(Self.format(date, "EEEE, d MMMM"), y: height * 0.12, size: 26 * scale, weight: .semibold, color: CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.85), in: context, width: width)
-        drawCentered(Self.format(date, "H:mm"), y: height * 0.12 + 120 * scale, size: 118 * scale, weight: .bold, color: CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.8), in: context, width: width)
-
+        drawCentered(Self.format(date, "EEEE, d MMMM"), y: height * 0.11, size: 24 * scale, weight: .semibold, color: CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.85), in: context, width: width)
+        drawCentered(Self.format(date, "H:mm"), y: height * 0.11 + 108 * scale, size: 104 * scale, weight: .bold, color: CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.82), in: context, width: width)
         drawBranding(in: context, width: width, height: height, scale: scale)
 
-        let avatarSize = 96 * scale
+        // Frosted glass card.
+        let cardWidth = 360 * scale
+        let cardHeight = (form.acceptsInput ? 300 : 230) * scale
+        let card = CGRect(x: (width - cardWidth) / 2, y: height * 0.62 - cardHeight / 2, width: cardWidth, height: cardHeight)
+        drawGlass(card, cornerRadius: 26 * scale, in: context)
+
         let centerX = width / 2
-        var y = height * 0.66 - avatarSize
-        drawAvatar(CGRect(x: centerX - avatarSize / 2, y: y, width: avatarSize, height: avatarSize), form: form, in: context)
-        y += avatarSize + 34 * scale
+        let avatarSize = 72 * scale
+        var y = card.minY + 28 * scale
+        drawPersonGlyph(CGRect(x: centerX - avatarSize / 2, y: y, width: avatarSize, height: avatarSize), in: context)
+        y += avatarSize + 30 * scale
+        drawCentered("Sign in to \(appearance.serverName ?? "this Mac")", y: y, size: 17 * scale, weight: .semibold, color: white, in: context, width: width)
+        y += 18 * scale
 
         guard form.acceptsInput else {
-            drawCentered(appearance.displayName ?? form.userName, y: y, size: 19 * scale, weight: .semibold, color: white, in: context, width: width)
             if let message = form.message {
-                for (index, line) in Self.wrap(message, maximumCharacters: 70).enumerated() {
-                    drawCentered(line, y: y + 34 * scale + Double(index) * 22 * scale, size: 15 * scale, weight: .medium, color: white, in: context, width: width)
+                for (index, line) in Self.wrap(message, maximumCharacters: 46).enumerated() {
+                    drawCentered(line, y: y + 24 * scale + Double(index) * 20 * scale, size: 13 * scale, weight: .medium, color: white, in: context, width: width)
                 }
             }
             return
         }
 
-        let fieldWidth = 230 * scale
-        let fieldHeight = 30 * scale
-        let showsNameLabel = form.focusedField == .password && isSuggestedAccount(form.userName)
-        if showsNameLabel {
-            drawCentered(appearance.displayName ?? form.userName, y: y, size: 19 * scale, weight: .semibold, color: white, in: context, width: width)
-            y += 22 * scale
-        } else {
-            let nameField = CGRect(x: centerX - fieldWidth / 2, y: y - 14 * scale, width: fieldWidth, height: fieldHeight)
-            drawCapsuleField(nameField, text: form.userName, placeholder: "User Name", isFocused: form.focusedField == .userName, showsArrow: false, scale: scale, in: context)
-            y = nameField.maxY + 10 * scale
-        }
-        let passwordField = CGRect(x: centerX - fieldWidth / 2, y: y, width: fieldWidth, height: fieldHeight)
-        drawCapsuleField(passwordField, text: String(repeating: "•", count: form.password.count), placeholder: "Enter Password", isFocused: form.focusedField == .password, showsArrow: true, scale: scale, in: context)
-        y = passwordField.maxY + 30 * scale
-
-        let detail = form.isVerifying ? "Logging in…" : form.message ?? "Press Enter to log in · Tab to change the user"
+        let fieldWidth = cardWidth - 64 * scale
+        let fieldHeight = 32 * scale
+        let nameField = CGRect(x: centerX - fieldWidth / 2, y: y + 14 * scale, width: fieldWidth, height: fieldHeight)
+        drawCapsuleField(nameField, text: form.userName, placeholder: "User Name", isFocused: form.focusedField == .userName, showsArrow: false, scale: scale, in: context)
+        let passwordField = CGRect(x: nameField.minX, y: nameField.maxY + 10 * scale, width: fieldWidth, height: fieldHeight)
+        drawCapsuleField(passwordField, text: String(repeating: "•", count: form.password.count), placeholder: "Password", isFocused: form.focusedField == .password, showsArrow: true, scale: scale, in: context)
+        let detail = form.isVerifying ? "Signing in…" : form.message ?? "Press Enter to sign in · Tab switches fields"
         let detailColor = form.message != nil && !form.isVerifying ? CGColor(srgbRed: 1, green: 0.82, blue: 0.78, alpha: 1) : CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.7)
-        drawCentered(detail, y: y, size: 13 * scale, weight: .medium, color: detailColor, in: context, width: width)
+        drawCentered(detail, y: passwordField.maxY + 28 * scale, size: 12 * scale, weight: .medium, color: detailColor, in: context, width: width)
+    }
+
+    /// Translucent white card with a light border and a soft shadow, like macOS glass materials.
+    private func drawGlass(_ rect: CGRect, cornerRadius: Double, in context: CGContext) {
+        let path = CGPath(roundedRect: rect, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
+        context.saveGState()
+        context.setShadow(offset: CGSize(width: 0, height: 12), blur: 40, color: CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.25))
+        context.addPath(path)
+        context.setFillColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.16))
+        context.fillPath()
+        context.restoreGState()
+        context.saveGState()
+        context.addPath(path)
+        context.clip()
+        let colors = [CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.14), CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.02)] as CFArray
+        if let gradient = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB), colors: colors, locations: [0, 1]) {
+            context.drawLinearGradient(gradient, start: CGPoint(x: rect.midX, y: rect.minY), end: CGPoint(x: rect.midX, y: rect.maxY), options: [])
+        }
+        context.restoreGState()
+        context.addPath(path)
+        context.setStrokeColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.35))
+        context.setLineWidth(1)
+        context.strokePath()
+    }
+
+    /// Generic account symbol (head and shoulders) instead of any personal picture.
+    private func drawPersonGlyph(_ rect: CGRect, in context: CGContext) {
+        context.setFillColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.22))
+        context.fillEllipse(in: rect)
+        context.saveGState()
+        context.addEllipse(in: rect)
+        context.clip()
+        context.setFillColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.85))
+        let head = rect.width * 0.36
+        context.fillEllipse(in: CGRect(x: rect.midX - head / 2, y: rect.minY + rect.height * 0.2, width: head, height: head))
+        let body = rect.width * 0.72
+        context.fillEllipse(in: CGRect(x: rect.midX - body / 2, y: rect.minY + rect.height * 0.62, width: body, height: body * 0.8))
+        context.restoreGState()
     }
 
     /// iRdp's own mark: a small badge with the app name and the computer name at the bottom.
@@ -115,10 +150,6 @@ public final class LogonScreenRenderer {
         drawText(subtitle, at: CGPoint(x: badgeRect.maxX + 8 * scale + titleWidth + 10 * scale, y: baseline), size: 13 * scale, weight: .medium, color: CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.7), in: context)
     }
 
-    private func isSuggestedAccount(_ userName: String) -> Bool {
-        guard let suggested = appearance.defaultUserName else { return false }
-        return userName.caseInsensitiveCompare(suggested) == .orderedSame
-    }
 
     // MARK: - Drawing
 
@@ -126,35 +157,9 @@ public final class LogonScreenRenderer {
         let bounds = CGRect(x: 0, y: 0, width: width, height: height)
         if let background {
             context.draw(background, in: bounds)
-        } else {
-            let colors = [CGColor(srgbRed: 0.16, green: 0.25, blue: 0.47, alpha: 1), CGColor(srgbRed: 0.45, green: 0.26, blue: 0.48, alpha: 1)] as CFArray
-            if let gradient = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB), colors: colors, locations: [0, 1]) {
-                context.drawLinearGradient(gradient, start: CGPoint(x: 0, y: height), end: CGPoint(x: width, y: 0), options: [])
-            }
         }
-        context.setFillColor(CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.18))
+        context.setFillColor(CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.12))
         context.fill(bounds)
-    }
-
-    private func drawAvatar(_ rect: CGRect, form: LogonForm, in context: CGContext) {
-        context.saveGState()
-        context.addEllipse(in: rect)
-        context.clip()
-        if let avatar = appearance.avatar, isSuggestedAccount(form.userName) || form.userName.isEmpty {
-            // Undo the flip so the picture is upright.
-            context.saveGState()
-            context.translateBy(x: 0, y: rect.minY + rect.maxY)
-            context.scaleBy(x: 1, y: -1)
-            context.draw(avatar, in: rect)
-            context.restoreGState()
-        } else {
-            context.setFillColor(CGColor(srgbRed: 0.62, green: 0.64, blue: 0.68, alpha: 1))
-            context.fill(rect)
-            let name = isSuggestedAccount(form.userName) ? (appearance.displayName ?? form.userName) : form.userName
-            let initials = String(name.split(separator: " ").prefix(2).compactMap(\.first)).uppercased()
-            drawText(initials.isEmpty ? "?" : initials, centeredIn: rect, size: rect.height * 0.4, weight: .medium, color: CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1), in: context)
-        }
-        context.restoreGState()
     }
 
     private func drawCapsuleField(_ rect: CGRect, text: String, placeholder: String, isFocused: Bool, showsArrow: Bool, scale: Double, in context: CGContext) {
@@ -265,6 +270,29 @@ public final class LogonScreenRenderer {
         let offset = CGAffineTransform(translationX: (target.width - scaled.extent.width) / 2, y: (target.height - scaled.extent.height) / 2)
         let blurred = scaled.transformed(by: offset).clampedToExtent().applyingGaussianBlur(sigma: Double(size.width) / 60).cropped(to: target)
         return CIContext(options: [.useSoftwareRenderer: false]).createCGImage(blurred, from: target)
+    }
+
+    /// A generic abstract picture of soft color blobs, so the logon screen shows nothing from the Mac.
+    static func abstractBackground() -> CGImage? {
+        let width = 480
+        let height = 270
+        guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                                      space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue) else { return nil }
+        context.setFillColor(CGColor(srgbRed: 0.12, green: 0.2, blue: 0.42, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        let blobs: [(Double, Double, Double, CGColor)] = [
+            (0.15, 0.8, 0.55, CGColor(srgbRed: 0.33, green: 0.45, blue: 0.95, alpha: 1)),
+            (0.85, 0.75, 0.5, CGColor(srgbRed: 0.6, green: 0.33, blue: 0.85, alpha: 1)),
+            (0.55, 0.15, 0.6, CGColor(srgbRed: 0.18, green: 0.62, blue: 0.85, alpha: 1)),
+            (0.95, 0.1, 0.35, CGColor(srgbRed: 0.85, green: 0.42, blue: 0.62, alpha: 1)),
+        ]
+        for (x, y, radius, color) in blobs {
+            let r = radius * Double(height)
+            context.setFillColor(color)
+            context.fillEllipse(in: CGRect(x: x * Double(width) - r, y: y * Double(height) - r, width: r * 2, height: r * 2))
+        }
+        return context.makeImage()
     }
 
     static func wrap(_ text: String, maximumCharacters: Int) -> [String] {

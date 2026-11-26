@@ -1,23 +1,17 @@
 import CoreGraphics
 
-/// What the logon screen shows: the wallpaper (blurred by the renderer) and the suggested account.
+/// What the logon screen shows. It is generic on purpose: nothing taken from the Mac's screen, no account picture.
 public struct LogonScreenAppearance: @unchecked Sendable {
-    /// Desktop wallpaper of the shared Mac; `nil` uses a gradient.
+    /// Background picture (blurred by the renderer); `nil` draws a generic abstract background.
     public var wallpaper: CGImage?
-    /// Short user name filled in by default (e.g. the logged-in macOS user).
+    /// User name filled in when the client did not send one.
     public var defaultUserName: String?
-    /// Name shown under the avatar.
-    public var displayName: String?
-    /// Account picture; `nil` draws the initials.
-    public var avatar: CGImage?
-    /// Computer name shown next to the iRdp mark at the bottom of the screen.
+    /// Computer name shown in the card and next to the iRdp mark.
     public var serverName: String?
 
-    public init(wallpaper: CGImage? = nil, defaultUserName: String? = nil, displayName: String? = nil, avatar: CGImage? = nil, serverName: String? = nil) {
+    public init(wallpaper: CGImage? = nil, defaultUserName: String? = nil, serverName: String? = nil) {
         self.wallpaper = wallpaper
         self.defaultUserName = defaultUserName
-        self.displayName = displayName
-        self.avatar = avatar
         self.serverName = serverName
     }
 }
