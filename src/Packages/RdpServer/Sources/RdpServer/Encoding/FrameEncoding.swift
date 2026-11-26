@@ -7,4 +7,6 @@ protocol FrameEncoding: AnyObject {
     /// One step of improving a still image after motion stopped; nil when there is nothing left to improve.
     func refinement() -> [[UInt8]]?
     func apply(_ quality: StreamingQuality)
+    /// Number of acknowledged frames produced by the last `encode` or `refinement` call.
+    var framesInLastBatch: Int { get }
 }

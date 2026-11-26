@@ -84,6 +84,17 @@ struct GraphicsFrameEncoderTests {
         #expect(steps > 1)
     }
 
+    @Test func splitsLargePlanarFramesIntoSmallFrames() throws {
+        let encoder = GraphicsFrameEncoder(desktopSize: DesktopSize(width: 640, height: 384), codec: .planar, quality: StreamingQuality()) { [$0] }
+        var pixels = [UInt8](repeating: 0, count: 640 * 384 * 4)
+        for index in pixels.indices { pixels[index] = UInt8.random(in: 0...255) }
+        let messages = encoder.encode(ScreenFrame(width: 640, height: 384, bytesPerRow: 2560, pixels: pixels), forceFullUpdate: true)
+        #expect(messages.count > 1)
+        #expect(encoder.framesInLastBatch == messages.count)
+        #expect(messages.allSatisfy { $0.count <= SegmentedDataLimit.single })
+        #expect(try messages.reduce(0) { $0 + (try codecs($1)).count } == 60)
+    }
+
     @Test func videoUpdatesOnlyChangedRegions() throws {
         let encoder = makeEncoder(codec: .avc420)
         let first = TestPatternFrameSource.makeFrame(size: DesktopSize(width: 200, height: 100), tick: 0)

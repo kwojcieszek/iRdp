@@ -100,7 +100,7 @@ final class FrameUpdatePump: @unchecked Sendable {
         fullRefreshRequested = false
         guard !packets.isEmpty else { return }
         isSending = true
-        if encoder.usesFrameAcknowledgements { framesInFlight += 1 }
+        if encoder.usesFrameAcknowledgements { framesInFlight += encoder.framesInLastBatch }
         let byteCount = packets.reduce(0) { $0 + $1.count }
         let displayTime = frame.displayTime
         send(packets) { [weak self] in
@@ -124,7 +124,7 @@ final class FrameUpdatePump: @unchecked Sendable {
             guard generation == self.refinementGeneration, self.pendingFrame == nil, !self.isSending, !self.isStopped, !self.isPaused, self.canSendFrame else { return }
             guard let packets = self.encoder.refinement(), !packets.isEmpty else { return }
             self.isSending = true
-            if self.encoder.usesFrameAcknowledgements { self.framesInFlight += 1 }
+            if self.encoder.usesFrameAcknowledgements { self.framesInFlight += self.encoder.framesInLastBatch }
             self.send(packets) { [weak self] in
                 guard let self else { return }
                 self.queue.async {

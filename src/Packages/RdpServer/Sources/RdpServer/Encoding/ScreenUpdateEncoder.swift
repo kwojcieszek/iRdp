@@ -15,6 +15,8 @@ public final class ScreenUpdateEncoder: FrameEncoding {
 
     func refinement() -> [[UInt8]]? { nil }
 
+    var framesInLastBatch: Int { 1 }
+
     func apply(_ quality: StreamingQuality) {}
 
     public init(bitsPerPixel: Int, usesPlanarCompression: Bool = true, includesCompressionHeader: Bool = false) {

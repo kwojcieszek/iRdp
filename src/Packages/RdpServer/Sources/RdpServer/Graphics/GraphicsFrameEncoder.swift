@@ -28,6 +28,7 @@ final class GraphicsFrameEncoder: FrameEncoding {
     /// Tiles last drawn with lossy H.264 and not yet replaced by lossless tiles.
     private(set) var lossyTiles = Set<Int>()
     private var videoRefinementsLeft = 0
+    private(set) var framesInLastBatch = 1
 
     var usesFrameAcknowledgements: Bool { true }
 
@@ -75,8 +76,26 @@ final class GraphicsFrameEncoder: FrameEncoding {
                 return encode(frame, forceFullUpdate: true)
             }
         case .planar:
-            content = encodePlanar(frame, tiles: tiles)
+            // Lossless tiles go out as several small frames, so no RDPGFX message needs more than one segment.
+            var packets: [[UInt8]] = []
+            var batch: [UInt8] = []
+            var frames = 0
+            for tile in tiles.sorted() {
+                batch += encodePlanar(frame, tiles: [tile])
+                if batch.count >= Self.maximumRefinementBytes {
+                    packets += wrapFrame(batch)
+                    frames += 1
+                    batch = []
+                }
+            }
+            if !batch.isEmpty {
+                packets += wrapFrame(batch)
+                frames += 1
+            }
+            framesInLastBatch = frames
+            return packets
         }
+        framesInLastBatch = 1
         return wrapFrame(content)
     }
 
@@ -84,6 +103,7 @@ final class GraphicsFrameEncoder: FrameEncoding {
         guard codec == .avc420, let frame = lastFrame else { return nil }
         if quality.sharpensStillImages {
             guard !lossyTiles.isEmpty else { return nil }
+            framesInLastBatch = 1
             var content: [UInt8] = []
             for tile in lossyTiles.sorted() {
                 content += encodePlanar(frame, tiles: [tile])
@@ -94,6 +114,7 @@ final class GraphicsFrameEncoder: FrameEncoding {
         }
         guard videoRefinementsLeft > 0, !lossyTiles.isEmpty else { return nil }
         videoRefinementsLeft -= 1
+        framesInLastBatch = 1
         guard let content = try? encodeAvc(frame, tiles: lossyTiles, keyFrame: false) else { return nil }
         return wrapFrame(content)
     }

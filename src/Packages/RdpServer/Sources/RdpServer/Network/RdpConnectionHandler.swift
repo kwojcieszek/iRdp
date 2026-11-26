@@ -335,7 +335,10 @@ final class RdpConnectionHandler: ChannelInboundHandler {
         guard phase == .active else { return }
         // Until the user is authenticated, input only ever reaches the logon screen.
         guard isAuthenticated, logonForm == nil else {
-            if logonForm != nil { events.forEach { handleLogonInput($0) } }
+            if logonForm != nil {
+                Self.logger.debug("logon screen received \(events.count) input events")
+                events.forEach { handleLogonInput($0) }
+            }
             return
         }
         guard let sink = authenticatedInputSink else { return }
