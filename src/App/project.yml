@@ -1,0 +1,81 @@
+# XcodeGen spec for iRdp.xcodeproj (the app, like an executable project in a .NET solution).
+# Regenerate with: cd src/App && xcodegen generate
+name: iRdp
+options:
+  bundleIdPrefix: com
+  deploymentTarget:
+    macOS: "15.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "15.0"
+    DEVELOPMENT_TEAM: RMCMJSS2J3
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_HARDENED_RUNTIME: YES
+packages:
+  RdpProtocol:
+    path: ../Packages/RdpProtocol
+  RdpServer:
+    path: ../Packages/RdpServer
+  IRdpConfiguration:
+    path: ../Packages/IRdpConfiguration
+  MacIntegration:
+    path: ../Packages/MacIntegration
+  IRdpServiceCore:
+    path: ../Packages/IRdpServiceCore
+targets:
+  iRdpService:
+    type: tool
+    platform: macOS
+    sources:
+      - Sources/iRdpService
+    dependencies:
+      - package: IRdpServiceCore
+    settings:
+      base:
+        PRODUCT_NAME: iRdpService
+        PRODUCT_BUNDLE_IDENTIFIER: com.irdp.service
+        SKIP_INSTALL: YES
+        # No embedded Info.plist: macOS then attributes the service's privacy permissions to the
+        # enclosing iRdp app (com.irdp), so one grant in System Settings covers both.
+        OTHER_CODE_SIGN_FLAGS: "--identifier com.irdp.service"
+  iRdp:
+    type: application
+    platform: macOS
+    sources:
+      - Sources/iRdp
+      - path: Resources/com.irdp.service.plist
+        buildPhase:
+          copyFiles:
+            destination: wrapper
+            subpath: Contents/Library/LaunchAgents
+    dependencies:
+      - package: IRdpConfiguration
+      - package: MacIntegration
+      - package: RdpServer
+      - target: iRdpService
+        copy:
+          destination: executables
+        codeSign: true
+    settings:
+      base:
+        PRODUCT_NAME: iRdp
+        PRODUCT_BUNDLE_IDENTIFIER: com.irdp
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Resources/Info.plist
+schemes:
+  iRdp:
+    build:
+      targets:
+        iRdp: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - package: RdpProtocol/RdpProtocolTests
+        - package: RdpServer/RdpServerTests
+        - package: IRdpConfiguration/IRdpConfigurationTests
+        - package: MacIntegration/MacIntegrationTests
+        - package: IRdpServiceCore/IRdpServiceCoreTests
