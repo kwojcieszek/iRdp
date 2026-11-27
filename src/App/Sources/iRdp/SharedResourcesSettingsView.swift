@@ -1,7 +1,7 @@
 import IRdpConfiguration
 import SwiftUI
 
-/// Chooses the shared display, image quality and which input devices remote users may control.
+/// Chooses the shared display, image quality, sound and which input devices remote users may control.
 struct SharedResourcesSettingsView: View {
     @Bindable var model: AppModel
 
@@ -37,8 +37,14 @@ struct SharedResourcesSettingsView: View {
                 Toggle("Use Ctrl as Command (Windows key becomes Control)", isOn: $model.settings.sharedResources.swapControlAndCommand)
                     .disabled(!model.settings.sharedResources.shareKeyboard)
             }
+            Section("Sound") {
+                Toggle("Play Mac sound on the remote computer", isOn: $model.settings.sharedResources.shareAudio)
+                Text("The client must allow remote audio playback (in mstsc: Local Resources › Remote audio › Play on this computer). Sound keeps playing on the Mac too.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
             Section {
-                Text("Only the screen image, mouse and keyboard are shared. Display, resolution and input changes apply to new connections.")
+                Text("Only the screen image, sound, mouse and keyboard are shared. Display, resolution, sound and input changes apply to new connections.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

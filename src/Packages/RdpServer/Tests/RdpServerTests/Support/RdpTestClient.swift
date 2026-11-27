@@ -38,7 +38,7 @@ final class RdpTestClient: Sendable {
     }
 
     /// Performs TLS and the MCS connection sequence, then sends the client info PDU.
-    func connectSession(userName: String, password: String, width: UInt16 = 800, height: UInt16 = 600, supportsGraphicsPipeline: Bool = false) async throws -> RdpTestClient {
+    func connectSession(userName: String, password: String, width: UInt16 = 800, height: UInt16 = 600, supportsGraphicsPipeline: Bool = false, extraChannels: [String] = []) async throws -> RdpTestClient {
         var tls = TLSConfiguration.makeClientConfiguration()
         tls.certificateVerification = .none
         let sslContext = try NIOSSLContext(configuration: tls)
@@ -48,7 +48,7 @@ final class RdpTestClient: Sendable {
 
         let clientData = ClientConnectionData(
             core: ClientCoreData(desktopWidth: width, desktopHeight: height, clientName: "TESTCLIENT", earlyCapabilityFlags: ClientCoreData.wants32BitsPerPixelSession | (supportsGraphicsPipeline ? ClientCoreData.supportsGraphicsPipeline : 0)),
-            network: ClientNetworkData(channels: [ChannelDefinition(name: "cliprdr")] + (supportsGraphicsPipeline ? [ChannelDefinition(name: "drdynvc")] : []))
+            network: ClientNetworkData(channels: [ChannelDefinition(name: "cliprdr")] + (supportsGraphicsPipeline ? [ChannelDefinition(name: "drdynvc")] : []) + extraChannels.map { ChannelDefinition(name: $0) })
         )
         try await send(X224DataTpdu.packet(McsConnectInitial(userData: GccConferenceCreateRequest.encode(clientData: clientData.encodeBlocks())).encode()))
         let response = try McsConnectResponse.parse(X224DataTpdu.payload(of: TpktPacket.unwrap(try await nextFrame())))
@@ -153,6 +153,28 @@ final class RdpTestClient: Sendable {
             try reader.skip(Int(try reader.readUInt32LE()) - 8)
         }
         return result
+    }
+
+    // MARK: - Static channels
+
+    func sendStaticChannelMessage(_ message: [UInt8], channel name: String) async throws {
+        guard let channelId = staticChannelIds[name] else { throw RdpTestClientError.unexpected("channel \(name)") }
+        for chunk in StaticChannelPdu.chunks(for: message) {
+            try await send(X224DataTpdu.packet(McsDomainPdu.sendDataRequest(userId: userId, channelId: channelId, data: chunk).encode()))
+        }
+    }
+
+    /// Next complete message the server sent on a static channel, skipping other traffic.
+    func nextStaticChannelMessage(channel name: String) async throws -> [UInt8] {
+        guard let channelId = staticChannelIds[name] else { throw RdpTestClientError.unexpected("channel \(name)") }
+        var reassembler = StaticChannelReassembler()
+        while true {
+            let frame = try await nextFrame()
+            guard frame.first == TpktPacket.version,
+                  case .sendDataIndication(_, channelId, let data) = try McsDomainPdu.parse(X224DataTpdu.payload(of: TpktPacket.unwrap(frame))),
+                  let message = try reassembler.append(data) else { continue }
+            return message
+        }
     }
 
     // MARK: - Low level helpers

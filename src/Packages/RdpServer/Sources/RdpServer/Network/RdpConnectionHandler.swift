@@ -50,6 +50,11 @@ final class RdpConnectionHandler: ChannelInboundHandler {
     private var logonRenderer: LogonScreenRenderer?
     private var drdynvcChannelId: UInt16?
     private var graphicsChannel = GraphicsChannelController()
+    private var rdpsndChannelId: UInt16?
+    private var audioChannel = AudioChannelController()
+    private var isAudioStreaming = false
+    private let audioClock = ContinuousClock()
+    private lazy var audioClockStart = audioClock.now
     private var virtualChannelChunkLength = StaticChannelPdu.defaultChunkLength
     private var keyTranslator = KeyboardTextTranslator(keyboardLayout: 0)
 
@@ -226,6 +231,9 @@ final class RdpConnectionHandler: ChannelInboundHandler {
         if let index = data.network.channels.firstIndex(where: { $0.name.lowercased() == GraphicsChannelController.staticChannelName }) {
             drdynvcChannelId = staticChannelIds[index]
         }
+        if let index = data.network.channels.firstIndex(where: { $0.name.lowercased() == AudioChannelController.staticChannelName }) {
+            rdpsndChannelId = staticChannelIds[index]
+        }
         userId = max(1007, McsChannel.firstStaticChannelId + UInt16(staticChannelIds.count))
         let serverData = ServerConnectionData(version: configuration.serverVersion, clientRequestedProtocols: requestedProtocols, staticChannelIds: staticChannelIds)
         let response = McsConnectResponse(userData: GccConferenceCreateResponse.encode(serverData: serverData.encodeBlocks()))
@@ -248,6 +256,8 @@ final class RdpConnectionHandler: ChannelInboundHandler {
                 try handleIoChannelData(data)
             } else if channelId == drdynvcChannelId, phase == .active {
                 try handleGraphicsChannelEvents(graphicsChannel.receive(chunk: data))
+            } else if channelId == rdpsndChannelId, phase == .active {
+                try handleAudioChannelEvents(audioChannel.receive(chunk: data, now: audioMilliseconds()))
             }
         case .disconnectProviderUltimatum:
             close()
@@ -611,6 +621,7 @@ final class RdpConnectionHandler: ChannelInboundHandler {
         let info = RdpSessionInfo(id: sessionId, remoteAddress: remoteAddress, clientName: clientData?.core.clientName ?? "", userName: clientInfo?.userName ?? "", desktopSize: desktopSize, bitsPerPixel: bitsPerPixel, startedAt: Date())
         environment.observer?.sessionDidStart(info)
         Self.logger.info("session started for \(info.userName, privacy: .public) at \(info.desktopSize.width)x\(info.desktopSize.height)@\(info.bitsPerPixel)bpp")
+        startAudioIfSupported()
         let frameSource = resources.frameSource
         let framesPerSecond = quality.current.framesPerSecond
         Task {
@@ -692,6 +703,76 @@ final class RdpConnectionHandler: ChannelInboundHandler {
         }
     }
 
+    // MARK: - Audio output
+
+    /// Offers the server's sound to the client; only once the user is signed in to the desktop.
+    private func startAudioIfSupported() {
+        guard resources?.audioSource != nil, rdpsndChannelId != nil, audioChannel.state == .idle else { return }
+        do {
+            try handleAudioChannelEvents(audioChannel.start())
+        } catch {
+            Self.logger.error("audio channel: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    private func handleAudioChannelEvents(_ events: [AudioChannelController.Event]) throws {
+        for event in events {
+            switch event {
+            case .send(let message):
+                sendAudioChannelMessage(message)
+            case .startStreaming(let format):
+                startAudioCapture(format)
+            case .stopStreaming:
+                stopAudioCapture()
+            }
+        }
+        if audioChannel.state == .unavailable, !isAudioStreaming {
+            Self.logger.notice("client \(self.remoteAddress, privacy: .public) does not play any offered audio format")
+        }
+    }
+
+    private func startAudioCapture(_ format: AudioStreamFormat) {
+        guard let context, let audioSource = resources?.audioSource, !isAudioStreaming else { return }
+        isAudioStreaming = true
+        let bound = NIOLoopBound(self, eventLoop: context.eventLoop)
+        let eventLoop = context.eventLoop
+        Self.logger.info("audio output \(format.sampleRate) Hz, \(format.channels) channels")
+        Task {
+            do {
+                try await audioSource.start(format: format) { samples in
+                    eventLoop.execute { bound.value.sendAudio(samples) }
+                }
+            } catch {
+                Self.logger.error("audio capture failed: \(String(describing: error), privacy: .public)")
+            }
+        }
+    }
+
+    private func stopAudioCapture() {
+        guard isAudioStreaming, let audioSource = resources?.audioSource else { return }
+        isAudioStreaming = false
+        Task { await audioSource.stop() }
+    }
+
+    private func sendAudio(_ samples: [UInt8]) {
+        guard phase == .active, isAudioStreaming else { return }
+        for message in audioChannel.messages(forSamples: samples, now: audioMilliseconds()) {
+            sendAudioChannelMessage(message)
+        }
+    }
+
+    private func sendAudioChannelMessage(_ message: [UInt8]) {
+        guard let channelId = rdpsndChannelId else { return }
+        for chunk in StaticChannelPdu.chunks(for: message, chunkLength: virtualChannelChunkLength) {
+            sendMcs(.sendDataIndication(userId: userId, channelId: channelId, data: chunk))
+        }
+    }
+
+    private func audioMilliseconds() -> UInt64 {
+        let elapsed = audioClockStart.duration(to: audioClock.now).components
+        return UInt64(elapsed.seconds) * 1000 + UInt64(elapsed.attoseconds / 1_000_000_000_000_000)
+    }
+
     // MARK: - Output helpers
 
     private func send(_ bytes: [UInt8]) {
@@ -751,7 +832,12 @@ final class RdpConnectionHandler: ChannelInboundHandler {
         isAuthenticated = false
         if let resources {
             let frameSource = resources.frameSource
-            Task { await frameSource.stop() }
+            let audioSource = isAudioStreaming ? resources.audioSource : nil
+            isAudioStreaming = false
+            Task {
+                await frameSource.stop()
+                await audioSource?.stop()
+            }
             self.resources = nil
         }
         if isRegistered {

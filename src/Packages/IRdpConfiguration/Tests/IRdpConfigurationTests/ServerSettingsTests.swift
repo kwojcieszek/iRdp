@@ -11,11 +11,12 @@ struct ServerSettingsTests {
         #expect(settings.sharedResources.shareMouse == false)
         #expect(settings.sharedResources.shareKeyboard == true)
         #expect(settings.sharedResources.quality == .good)
+        #expect(settings.sharedResources.shareAudio == true)
     }
 
     @Test func roundTripsThroughJson() throws {
         var settings = ServerSettings(port: 5000, loginMode: .applicationPassword)
-        settings.sharedResources = SharedResources(displayID: 7, shareKeyboard: false, resolution: .native, quality: .high, swapControlAndCommand: true, usesVideoEncoding: false)
+        settings.sharedResources = SharedResources(displayID: 7, shareKeyboard: false, resolution: .native, quality: .high, swapControlAndCommand: true, usesVideoEncoding: false, shareAudio: false)
         let decoded = try JSONDecoder().decode(ServerSettings.self, from: JSONEncoder().encode(settings))
         #expect(decoded == settings)
     }

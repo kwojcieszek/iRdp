@@ -6,8 +6,8 @@ Connect to the current Mac desktop from an RDP client such as Windows App,
 keyboard and mouse input.
 
 `iRdp.app` is the menu bar app for configuration and service control.
-`iRdpService` accepts connections, captures the display with ScreenCaptureKit,
-and posts keyboard and mouse events through Core Graphics. One remote session
+`iRdpService` accepts connections, captures the display and sound with
+ScreenCaptureKit, and posts keyboard and mouse events through Core Graphics. One remote session
 is active at a time. A new session replaces the previous one.
 
 ## Requirements
@@ -60,8 +60,14 @@ frame rate, and whether remote keyboard and mouse input are enabled.
 Connections use TLS, with CredSSP/NTLM when NLA is enabled. The graphics
 pipeline uses H.264 (AVC420) when hardware encoding is enabled and the client
 advertises support. Other clients receive planar graphics or bitmap updates,
-depending on their capabilities. Clipboard, audio, drive, and printer
-redirection are outside the scope of the project.
+depending on their capabilities.
+
+With **Shared Resources → Sound** enabled, the sound played on the Mac is
+captured with ScreenCaptureKit and played on the client over the RDP audio
+output channel (`rdpsnd`) as 16-bit PCM. The client must allow remote audio
+playback, for example **Play on this computer** in `mstsc.exe` or `/sound` in
+FreeRDP. Sound keeps playing on the Mac as well. Clipboard, microphone, drive,
+and printer redirection are outside the scope of the project.
 
 ## Project layout
 
@@ -71,7 +77,7 @@ redirection are outside the scope of the project.
 | `Packages/RdpProtocol/` | RDP packet encoding, decoding, and framing |
 | `Packages/RdpServer/` | SwiftNIO server, TLS, authentication, session handling, and frame encoding |
 | `Packages/IRdpConfiguration/` | Settings and status shared by the app and service |
-| `Packages/MacIntegration/` | Screen capture, input injection, displays, permissions, and account validation |
+| `Packages/MacIntegration/` | Screen and sound capture, input injection, displays, permissions, and account validation |
 | `Packages/IRdpServiceCore/` | Service runtime that wires the server to macOS |
 
 Run all package tests from the terminal, or use **Product → Test** with the

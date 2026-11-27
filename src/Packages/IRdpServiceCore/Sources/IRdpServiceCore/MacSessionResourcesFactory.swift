@@ -3,7 +3,7 @@ import IRdpConfiguration
 import MacIntegration
 import RdpServer
 
-/// Creates the screen capture and input injection for a new session from the shared resources settings.
+/// Creates the screen capture, sound capture and input injection for a new session from the shared resources settings.
 public struct MacSessionResourcesFactory: Sendable {
     public enum FactoryError: Error, CustomStringConvertible {
         case noDisplay
@@ -37,9 +37,10 @@ public struct MacSessionResourcesFactory: Sendable {
         let input: (any InputSink)? = resources.shareKeyboard || resources.shareMouse
             ? CoreGraphicsInputInjector(geometry: geometry, allowsKeyboard: resources.shareKeyboard, allowsMouse: resources.shareMouse, swapControlAndCommand: resources.swapControlAndCommand)
             : nil
+        let audio: (any AudioSource)? = resources.shareAudio ? ScreenCaptureAudioSource(displayID: display.id) : nil
         if let snapshots = ProcessInfo.processInfo.environment["IRDP_DEBUG_SNAPSHOT_DIR"], !snapshots.isEmpty {
-            return RdpSessionResources(frameSource: DiagnosticSnapshotFrameSource(wrapping: frameSource, directory: URL(fileURLWithPath: snapshots)), inputSink: input)
+            return RdpSessionResources(frameSource: DiagnosticSnapshotFrameSource(wrapping: frameSource, directory: URL(fileURLWithPath: snapshots)), inputSink: input, audioSource: audio)
         }
-        return RdpSessionResources(frameSource: frameSource, inputSink: input)
+        return RdpSessionResources(frameSource: frameSource, inputSink: input, audioSource: audio)
     }
 }

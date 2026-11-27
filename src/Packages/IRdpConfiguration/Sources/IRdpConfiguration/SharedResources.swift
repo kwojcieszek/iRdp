@@ -10,8 +10,10 @@ public struct SharedResources: Codable, Equatable, Sendable {
     public var swapControlAndCommand: Bool
     /// Hardware H.264 video encoding for clients that support it (much less data, lowest latency).
     public var usesVideoEncoding: Bool
+    /// Plays the sound of the Mac on the remote computer.
+    public var shareAudio: Bool
 
-    public init(displayID: UInt32? = nil, shareKeyboard: Bool = true, shareMouse: Bool = true, resolution: CaptureResolution = .points, quality: StreamQuality = .good, swapControlAndCommand: Bool = false, usesVideoEncoding: Bool = true) {
+    public init(displayID: UInt32? = nil, shareKeyboard: Bool = true, shareMouse: Bool = true, resolution: CaptureResolution = .points, quality: StreamQuality = .good, swapControlAndCommand: Bool = false, usesVideoEncoding: Bool = true, shareAudio: Bool = true) {
         self.displayID = displayID
         self.shareKeyboard = shareKeyboard
         self.shareMouse = shareMouse
@@ -19,6 +21,7 @@ public struct SharedResources: Codable, Equatable, Sendable {
         self.quality = quality
         self.swapControlAndCommand = swapControlAndCommand
         self.usesVideoEncoding = usesVideoEncoding
+        self.shareAudio = shareAudio
     }
 
     public init(from decoder: any Decoder) throws {
@@ -31,6 +34,7 @@ public struct SharedResources: Codable, Equatable, Sendable {
         quality = try container.decodeIfPresent(StreamQuality.self, forKey: .quality) ?? defaults.quality
         swapControlAndCommand = try container.decodeIfPresent(Bool.self, forKey: .swapControlAndCommand) ?? defaults.swapControlAndCommand
         usesVideoEncoding = try container.decodeIfPresent(Bool.self, forKey: .usesVideoEncoding) ?? defaults.usesVideoEncoding
+        shareAudio = try container.decodeIfPresent(Bool.self, forKey: .shareAudio) ?? defaults.shareAudio
     }
 
     /// Settings that require restarting the server; quality changes apply to running sessions.
